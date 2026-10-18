@@ -14,7 +14,8 @@
         "httpMethod": "POST",
         "path": "iam-hr-action",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "webhookId": "5bc92735-b455-415a-b35d-4831ec708d25"
     },
@@ -28,7 +29,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const b=$json.body??{};\nconst email=typeof b.target_email==='string'?b.target_email.trim().toLowerCase():'';\nconst id=b.operation_id==null?null:String(b.operation_id);\nconst valid=\"offboard\"==='reset'||(/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)&&email.length<=254&&(id===null||/^[1-9][0-9]{0,17}$/.test(id)));\nreturn [{json:{valid,kind:\"offboard\",email:\"offboard\"==='reset'?'*':email,operation_id:id,owner:String($execution.id),is_webhook:!!$json.webhookUrl}}];"
+        "jsCode": "const mapping = {\n  \"john.carter@demo-corp.com\": \"iamhr-john-carter\",\n  \"sarah.connor@demo-corp.com\": \"iamhr-sarah-connor\",\n  \"tchalla.udaku@demo-corp.com\": \"iamhr-tchalla-udaku\",\n  \"ellen.ripley@demo-corp.com\": \"iamhr-ellen-ripley\",\n  \"arthur.dent@demo-corp.com\": \"iamhr-arthur-dent\",\n  \"marty.mcfly@demo-corp.com\": \"iamhr-marty-mcfly\",\n  \"dana.scully@demo-corp.com\": \"iamhr-dana-scully\"\n};\nconst b=$json.body??{};\nconst email=typeof b.target_email==='string'?b.target_email:'';\nconst id=b.operation_id==null?null:String(b.operation_id);\nconst fail=(code,http_status,error)=>[{json:{valid:false,success:false,code,http_status,error}}];\nif (!Object.hasOwn(mapping,email)) return fail('TARGET_NOT_ALLOWED',400,'Select an allowed synthetic target.');\nif (id!==null&&!/^[1-9][0-9]{0,17}$/.test(id)) return fail('INVALID_REQUEST',400,'Invalid operation_id.');\nconst entries=Object.entries(mapping);\nif(entries.length!==7||new Set(entries.map(([,id])=>id)).size!==7||entries.some(([,id])=>!/^iamhr-[a-z0-9-]+$/.test(id)))\n  return fail('INVALID_SYNTHETIC_MAPPING',500,'Synthetic target configuration is invalid.');\nconst project=$env.GCP_PROJECT_ID;\nif(typeof project!=='string'||!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project))\n  return fail('INVALID_GCP_PROJECT',500,'GCP project configuration is invalid.');\nconst account_id=mapping[email];\nconst expected_email=`${account_id}@${project}.iam.gserviceaccount.com`;\nreturn [{json:{valid:true,kind:'offboard',email,operation_id:id,owner:String($execution.id),is_webhook:!!$json.webhookUrl,account_id,expected_email,gcp_project_id:project}}];"
       }
     },
     {
@@ -75,7 +76,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "return [{json:{http_status:400,success:false,code:'INVALID_REQUEST',error:'Provide a valid target_email and optional operation_id.'}}];"
+        "jsCode": "const preflight=$('Validate Request').first().json;\nreturn [{json:{http_status:preflight.http_status,success:false,code:preflight.code,error:preflight.error}}];"
       }
     },
     {
@@ -482,7 +483,7 @@
         780
       ],
       "parameters": {
-        "jsCode": "return [{json:$json}];"
+        "jsCode": "const preflight=$('Validate Request').first().json;\nreturn [{json:{...$json,account_id:preflight.account_id,expected_email:preflight.expected_email,gcp_project_id:preflight.gcp_project_id}}];"
       }
     },
     {
@@ -496,7 +497,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/demo-employee-identity@{{ $env.GCP_PROJECT_ID }}.iam.gserviceaccount.com",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $('GCP Context').first().json.gcp_project_id }}/serviceAccounts/{{ $json.expected_email }}",
         "options": {
           "timeout": 8000,
           "response": {
@@ -528,7 +529,7 @@
         1040
       ],
       "parameters": {
-        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=typeof body?.email==='string' && body.email.startsWith('demo-employee-identity@');\nconst desired=body?.disabled===true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
+        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=body?.email===ctx.expected_email && typeof body.disabled==='boolean';\nconst desired=body?.disabled===true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
       }
     },
     {
@@ -599,7 +600,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/demo-employee-identity@{{ $env.GCP_PROJECT_ID }}.iam.gserviceaccount.com:disable",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $('GCP Context').first().json.gcp_project_id }}/serviceAccounts/{{ $('GCP Context').first().json.expected_email }}:disable",
         "options": {
           "timeout": 8000,
           "response": {

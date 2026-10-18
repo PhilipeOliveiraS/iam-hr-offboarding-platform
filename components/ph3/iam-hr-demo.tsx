@@ -1,18 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useSWRConfig } from "swr";
 import {
   Wrench,
   Loader2,
   CheckCircle,
   ShieldAlert,
-  Mail,
   ArrowRight,
   RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   normalizeOffboarding,
   readApiResponse,
@@ -42,27 +40,18 @@ export function IamHrDemo({
   const [selectedEmail, setSelectedEmail] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
-  const [visitorEmail, setVisitorEmail] = useState("");
-  const [isSendingReport, setIsSendingReport] = useState(false);
-  const [sentOperation, setSentOperation] = useState("");
-  const [uncertainReport, setUncertainReport] = useState("");
 
   const selectedEmployee = employees.find(
     (employee) => employee.Email === selectedEmail,
   );
   const operation = selectedEmployee?.Operation;
-  const operationKey = operation ? `${operation.cycle}:${operation.id}` : "";
   const offboardingComplete =
     operation?.status === "succeeded" && !operation.stale;
-  const reportSent = sentOperation === operationKey && operationKey !== "";
-  const reportUnconfirmed =
-    uncertainReport === operationKey && operationKey !== "";
   const blocked = isLoading || readOnly || busy || maintenance;
   const canExecute =
     selectedEmployee &&
     !blocked &&
     !isProcessing &&
-    !isSendingReport &&
     !offboardingComplete &&
     !operation?.stale &&
     operation?.status !== "running" &&
@@ -74,7 +63,6 @@ export function IamHrDemo({
   function chooseEmployee(email: string) {
     setSelectedEmail(email);
     setStatusMsg("");
-    setVisitorEmail("");
   }
 
   async function handleOffboarding() {
@@ -87,7 +75,7 @@ export function IamHrDemo({
       await mutate<Dashboard>(
         API_BASE,
         async () => {
-          const response = await fetch(`${API_BASE}?type=offboard`, {
+          const response = await fetch(`${API_BASE}/action?type=offboard`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -112,55 +100,6 @@ export function IamHrDemo({
       await mutate(API_BASE).catch(() => undefined);
     } finally {
       setIsProcessing(false);
-    }
-  }
-
-  async function handleLeadCapture(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (
-      !selectedEmployee ||
-      !offboardingComplete ||
-      blocked ||
-      isSendingReport ||
-      reportSent ||
-      reportUnconfirmed
-    )
-      return;
-    setIsSendingReport(true);
-    setStatusMsg("");
-    try {
-      const response = await fetch(`${API_BASE}?type=report`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          visitor_email: visitorEmail.trim(),
-          target_employee: selectedEmployee.FullName,
-        }),
-      });
-      const result = await readApiResponse(response);
-      if (result.success !== true) {
-        throw new Error(
-          typeof result.error === "string"
-            ? result.error
-            : "Report delivery was not confirmed.",
-        );
-      }
-      setSentOperation(operationKey);
-      if (result.audit_logged === false)
-        setStatusMsg(
-          "Email accepted, but audit logging failed. Do not resend.",
-        );
-    } catch (error) {
-      setUncertainReport(operationKey);
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Report delivery was not confirmed.";
-      setStatusMsg(
-        `${message} Verify delivery before requesting another report.`,
-      );
-    } finally {
-      setIsSendingReport(false);
     }
   }
 
@@ -197,59 +136,14 @@ export function IamHrDemo({
             </p>
           </div>
           <ConnectorResults operation={operation} />
-          {!reportSent ? (
-            <div className="pt-4 border-t border-emerald-500/20">
-              <p className="text-sm font-medium text-slate-200 mb-3">
-                📋 Get AI-Generated Handover Report?
-              </p>
-              <form onSubmit={handleLeadCapture} className="flex gap-2">
-                <Input
-                  type="email"
-                  required
-                  maxLength={254}
-                  aria-label="Email for the handover report"
-                  placeholder="your.email@company.com"
-                  className="bg-slate-900 border-slate-700 focus:ring-emerald-500 text-slate-200 placeholder:text-slate-500"
-                  value={visitorEmail}
-                  onChange={(event) => setVisitorEmail(event.target.value)}
-                  disabled={isSendingReport || reportUnconfirmed || blocked}
-                />
-                <Button
-                  type="submit"
-                  aria-label="Send handover report"
-                  disabled={
-                    !visitorEmail.trim() ||
-                    isSendingReport ||
-                    reportUnconfirmed ||
-                    blocked
-                  }
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white whitespace-nowrap"
-                >
-                  {isSendingReport ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mail className="h-4 w-4" />
-                  )}
-                </Button>
-              </form>
-              <p className="text-[10px] text-slate-500 mt-2 italic">
-                ℹ️ Contextual AI report • No spam • Demo only
-              </p>
-            </div>
-          ) : (
-            <div className="pt-4 border-t border-emerald-500/20 flex items-center justify-center gap-2 text-emerald-400">
-              <CheckCircle className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                Report sent! Check your inbox.
-              </span>
-            </div>
-          )}
+          <p className="text-sm text-slate-400">
+            Public handover delivery is disabled pending persistent abuse controls.
+          </p>
           {feedback}
           <Button
             variant="ghost"
             size="sm"
             className="text-slate-400 hover:text-white hover:bg-slate-800/50"
-            disabled={isSendingReport}
             onClick={() => chooseEmployee("")}
           >
             Start New Demo <ArrowRight className="ml-1 h-3 w-3" />
@@ -366,7 +260,7 @@ function ConnectorResults({ operation }: { operation: Operation }) {
   const names = {
     postgres: "Employee record",
     erp: "ERP mock",
-    gcp: "GCP IAM (shared demo identity)",
+    gcp: "GCP IAM (synthetic employee identity)",
   };
   return (
     <div className="text-left space-y-2">

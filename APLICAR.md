@@ -52,7 +52,7 @@ Importe estes arquivos como novos workflows desativados:
 2. `automation/n8n/n8n-02-execute-offboarding.json`
 3. `automation/n8n/n8n-03-scheduled-reset.json`
 
-Selecione `IAM-HR Postgres` em **todos** os nós Postgres. Selecione `IAM-HR GCP Connector` nos nós GCP Inspect/Apply de 02 e 03. Os nomes presentes nos JSONs são referências a credenciais; as credenciais reais devem ser configuradas no servidor. O projeto usa `GCP_PROJECT_ID` e a identidade compartilhada `demo-employee-identity`. A permissão de leitura `iam.serviceAccounts.get` é necessária além de habilitar/desabilitar a conta.
+Selecione `IAM-HR Postgres` em **todos** os nós Postgres. Selecione `IAM-HR GCP Connector` nos nós GCP Inspect/Apply de 02 e 03. Os nomes presentes nos JSONs são referências a credenciais; as credenciais reais devem ser configuradas no servidor. Os fontes locais usam `GCP_PROJECT_ID` e o mapeamento explícito das sete contas `iamhr-*`; não derivam IDs do e-mail. Vincule Header Auth nos webhooks de offboarding/reset antes de qualquer publicação deliberada. A permissão de leitura `iam.serviceAccounts.get` é necessária além de habilitar/desabilitar a conta.
 
 Nos quatro nós HTTP **ERP Inspect, ERP Apply, GCP Inspect e GCP Apply**, em **ambos** 02 e 03, confira:
 
@@ -67,7 +67,7 @@ Nos quatro nós HTTP **ERP Inspect, ERP Apply, GCP Inspect e GCP Apply**, em **a
 
 Esses campos ficam em `parameters.options.response.response`. Sem `outputPropertyName`, o conteúdo textual fica em `data`, enquanto os classificadores leem `body`. As oito configurações estão corrigidas nos fontes locais. A correção foi aplicada pelo operador no n8n e validada por reset/offboarding reais; ainda não houve comparação integral com exports atuais do servidor.
 
-Substitua o GET antigo pelo novo GET. Publique os novos 02/03 somente com banco/ERP prontos e versões antigas despublicadas. Os caminhos são `GET /webhook/iam-hr-data`, `POST /webhook/iam-hr-action` e `GET /webhook/reset-system`; o workflow 03 também agenda reset a cada 30 minutos.
+Substitua o GET antigo pelo novo GET. Publique os novos 02/03 somente com banco/ERP prontos e versões antigas despublicadas. Os caminhos são `GET /webhook/iam-hr-data`, `POST /webhook/iam-hr-action` e `POST /webhook/reset-system`; o gatilho de 30 minutos existe, mas está desabilitado no export local.
 
 Após uma instalação, invoque o reset de produção uma vez e confira `operation.status: succeeded`, os resultados por conector e todos os funcionários ACTIVE. O agendamento termina em Scheduled Result; a resposta HTTP é exclusiva do webhook. Não confunda uma execução verde do n8n com sucesso do negócio.
 
@@ -88,7 +88,7 @@ npm run start
 - Erros de entrada, concorrência ou infraestrutura conservam os códigos HTTP. HTML, corpo vazio e contratos inválidos nunca viram sucesso presumido.
 - Listas antigas e aliases úteis continuam legíveis, mas não habilitam ações sem metadados de recuperação.
 - O timeout de 55s inclui leitura do corpo; o provedor pode limitar antes. Timeout não cancela nem comprova falha da operação remota.
-- O handover usa `N8N_REPORT_URL`, `target_employee` e `visitor_email`, e exige confirmação explícita `success: true`. A confirmação na interface não comprova recebimento na caixa de entrada. Preserve seu conteúdo em inglês.
+- O envio público de handover está desabilitado localmente: `/api/iam-hr?type=report` e `/api/lead-capture` retornam 403 sem upstream. O workflow publicado permanece inalterado; sua configuração histórica não deve ser inferida destas rotas.
 - `processing_ms` soma tempo ativo de tentativas; não inclui espera humana, handover ou entrega HTTP. `elapsed_ms` inclui intervalo entre tentativas. A média de sucessos usa 24h; preserve **vs 48h manual** como referência comparativa.
 
 ## 5. Recuperação operacional
@@ -147,10 +147,14 @@ Continuam pendentes:
 3. **Hidratação no Firefox.** O seletor nativo e a supressão pré-existente de avisos no layout não substituem este teste.
 4. **Recebimento do handover** nesta rodada e comparação de um export atual do workflow publicado. Não reenviar cegamente em caso de resultado incerto.
 
-Não há aprovação completa nem declaração de prontidão para produção. A conta GCP é compartilhada, os webhooks continuam de demonstração anônima, o reset manual continua GET, e não foi adicionado rate limiting. Não há garantia exactly-once externa ou deduplicação persistente de e-mail. OAuth Gmail em Testing mantém suas limitações de expiração.
+Não há aprovação completa nem declaração de prontidão para produção. Os exports locais usam sete contas GCP sintéticas permitidas, offboarding/reset exigem Header Auth, reset usa POST e o cron está desabilitado. Não foi adicionado rate limiting persistente; o envio público de handover está desabilitado nas duas rotas locais. Não há garantia exactly-once externa ou deduplicação persistente de e-mail. OAuth Gmail em Testing mantém suas limitações de expiração.
 
 ## 7. Rollback
 
 Despublique os novos 02/03; confirme ausência de execuções e requisições em voo e resolva resultados incertos antes de reativar fluxos antigos. Restaure frontend/ERP e os backups reais dos workflows. Não use exports legados não comparados ou `reference/` como substitutos do handover publicado.
 
 As tabelas aditivas `iam_*` podem permanecer para diagnóstico. Restaurar o dump exige uma decisão deliberada: não apague auditorias recentes cegamente. Não apague volumes nem faça coexistir fluxos antigos fora da trava com uma tentativa nova em andamento.
+
+## Proposta local SCRUM-10 — não aplicada ao runtime
+
+As alterações locais de 14/10/2026 não autorizam executar os passos de implantação acima. Consulte `docs/SCRUM-10-local-safety.md` para os controles, testes e lacunas. Os relatos operacionais históricos desta documentação não comprovam equivalência dos novos arquivos com os workflows publicados.

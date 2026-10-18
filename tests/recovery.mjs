@@ -18,6 +18,20 @@ assert.equal((await next(id,'test-2')).connector,'gcp');await write(id,'test-2',
 let done=(await next(id,'test-2')).operation;assert.equal(done.status,'succeeded');
 assert.equal(done.connectors.find(c=>c.name==='erp').writes,1);assert.equal(done.connectors.find(c=>c.name==='postgres').writes,1);
 assert.equal((await begin('john.carter@demo-corp.com','test-3')).replayed,true);
+// A burst of deliveries must not create attempts, writes, events or audits
+// for a completed operation. This is ledger deduplication, not HTTP throttling.
+const ledgerState=async()=>{
+ const tables=['iam_runtime','iam_operations','iam_steps','iam_step_events','employees','audit_log'];
+ return Object.fromEntries(await Promise.all(tables.map(async table=>[
+  table,(await db.query(`SELECT to_jsonb(t) AS row FROM ${table} t ORDER BY to_jsonb(t)::text`)).rows
+ ])));
+};
+const beforeReplays=await ledgerState();
+const replays=await Promise.all(Array.from({length:16},(_,i)=>
+ begin('john.carter@demo-corp.com',`replay-burst-${i}`,i%2===0?id:null)));
+assert(replays.every(reply=>reply.accepted===false && reply.replayed===true && reply.operation.id===id));
+assert.deepEqual(await ledgerState(),beforeReplays);
+console.log('PASS: 16 repeated completed deliveries, with/without operation_id, leave the entire ledger, employees and audit unchanged (not an HTTP rate limiter).');
 b=await begin('sarah.connor@demo-corp.com','test-4');const second=b.operation_id;
 await next(second,'test-4');await write(second,'test-4','erp');await record(second,'test-4','erp','unknown');
 await next(second,'test-4');await record(second,'test-4','gcp','succeeded');await next(second,'test-4');

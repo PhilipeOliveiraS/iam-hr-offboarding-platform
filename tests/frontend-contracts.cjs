@@ -48,7 +48,7 @@ function load(relative, overrides = {}) {
       },
       fetch: (...args) => transport(...args),
       require: (name) =>
-        name === "@/lib/iam-hr" ? library : localRequire(name),
+        name === "@/lib/iam-hr-upstream" ? upstream : name === "@/lib/iam-hr" ? library : name === "@/lib/synthetic-targets" ? synthetic : localRequire(name),
       ...overrides,
     },
     { filename: relative },
@@ -56,6 +56,9 @@ function load(relative, overrides = {}) {
   return exports;
 }
 const library = load("lib/iam-hr.ts");
+const synthetic = load("lib/synthetic-targets.ts");
+const upstream = load("lib/iam-hr-upstream.ts");
+const action = load("app/api/iam-hr/action/route.ts");
 const route = load("app/api/iam-hr/route.ts");
 const check = async (name, fn) => {
   await fn();
@@ -66,8 +69,8 @@ const respond = (data, status = 200) => {
   transport = async () => Response.json(data, { status });
 };
 const post = (type, body) =>
-  route.POST(
-    new Request("http://local.invalid/api/iam-hr?type=" + type, {
+  action.POST(
+    new Request("http://local.invalid/api/iam-hr/action?type=" + type, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -75,6 +78,12 @@ const post = (type, body) =>
   );
 const email = "john.carter@demo-corp.com";
 (async () => {
+  await check("route methods isolate dashboard reads from actions", () => {
+    assert.equal(typeof route.GET, "function");
+    assert.equal(route.POST, undefined); // Next returns 405 for unsupported methods.
+    assert.equal(typeof action.POST, "function");
+    assert.equal(action.GET, undefined);
+  });
   const db = new PGlite();
   try {
     await db.exec(
@@ -132,6 +141,74 @@ const email = "john.carter@demo-corp.com";
       dashboard: await dashboard(),
     };
     await check(
+      "spoofed client/proxy headers cannot replace server webhook auth or enter the offboard payload",
+      async () => {
+        const previousKey = fakeEnvironment.N8N_WEBHOOK_KEY;
+        const testKey = "synthetic-test-only-webhook-key";
+        fakeEnvironment.N8N_WEBHOOK_KEY = testKey;
+        let calls = 0;
+        transport = async (url, init) => {
+          calls++;
+          assert.equal(url, fakeEnvironment.N8N_OFFBOARD_URL);
+          assert.equal(init.method, "POST");
+          const headers = new Headers(init.headers);
+          assert.equal(headers.get("X-N8N-Webhook-Secret"), testKey);
+          for (const header of ["Forwarded", "X-Forwarded-For", "X-Real-IP", "CF-Connecting-IP", "X-IAM-Client-IP"])
+            assert.equal(headers.get(header), null);
+          assert.deepEqual(JSON.parse(init.body), {
+            target_email: email,
+            operation_id: String(id),
+          });
+          return Response.json(partialReply);
+        };
+        try {
+          for (const claimedIp of ["198.51.100.10", "127.0.0.1", "198.51.100.10, 127.0.0.1"]) {
+            const response = await action.POST(new Request("http://local.invalid/api/iam-hr/action?type=offboard", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Forwarded: `for=${claimedIp}`,
+                "X-Forwarded-For": claimedIp,
+                "X-Real-IP": claimedIp,
+                "CF-Connecting-IP": claimedIp,
+                "X-IAM-Client-IP": claimedIp,
+                "X-N8N-Webhook-Secret": "attacker-controlled-value",
+              },
+              body: JSON.stringify({ target_email: email, operation_id: id, client_ip: claimedIp }),
+            }));
+            assert.equal(response.status, 200);
+            assert(!JSON.stringify(await response.json()).includes(testKey));
+          }
+          // These calls reach a mock: header isolation does not prove rate limiting.
+          assert.equal(calls, 3);
+        } finally {
+          if (previousKey === undefined) delete fakeEnvironment.N8N_WEBHOOK_KEY;
+          else fakeEnvironment.N8N_WEBHOOK_KEY = previousKey;
+        }
+      },
+    );
+    await check("repeated dashboard GET stays read-only, ignoring action query and forwarded identity", async () => {
+      const before = await db.query("SELECT to_jsonb(t) AS row FROM iam_operations t ORDER BY id");
+      let calls = 0;
+      transport = async (url, init) => {
+        calls++;
+        assert.equal(url, fakeEnvironment.N8N_GET_DATA_URL);
+        assert.equal(init.method, "GET");
+        assert.equal(init.body, undefined);
+        assert.equal(new Headers(init.headers).get("X-Forwarded-For"), null);
+        return Response.json(partialReply.dashboard);
+      };
+      for (let i = 0; i < 3; i++) {
+        const response = await route.GET(new Request("http://local.invalid/api/iam-hr?type=offboard", {
+          headers: { "X-Forwarded-For": "127.0.0.1", "CF-Connecting-IP": "198.51.100.10" },
+        }));
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).employees.length, 7);
+      }
+      assert.equal(calls, 3);
+      assert.deepEqual(await db.query("SELECT to_jsonb(t) AS row FROM iam_operations t ORDER BY id"), before);
+    });
+    await check(
       "HTTP 200 partial snapshot remains partial and operation_id is forwarded",
       async () => {
         transport = async (url, init) => {
@@ -170,16 +247,20 @@ const email = "john.carter@demo-corp.com";
       );
     });
     await check(
-      "mismatched selected employee cannot populate the dashboard",
+      "foreign selected employee is rejected before upstream",
       async () => {
-        respond(partialReply);
+        transport = () => { throw new Error("Unexpected upstream"); };
         assert.equal(
           (await post("offboard", { target_email: "other@example.com" }))
             .status,
-          502,
+          400,
         );
       },
     );
+    await check("allowlisted but mismatched response is rejected", async () => {
+      respond(partialReply);
+      assert.equal((await post("offboard", {target_email:"sarah.connor@demo-corp.com"})).status,502);
+    });
     await check("malformed connector list is rejected", async () => {
       const raw = structuredClone(partialReply);
       raw.dashboard.employees[0].operation.connectors = [];
@@ -377,31 +458,106 @@ const email = "john.carter@demo-corp.com";
         assert.equal((await post("invalid", {})).status, 400);
       },
     );
-    await check(
-      "handover fields are retained and delivery requires explicit success",
-      async () => {
-        transport = async (_url, init) => {
-          const body = JSON.parse(init.body);
-          assert.equal(body.target_employee, "John Carter");
-          assert.equal(body.visitor_email, "visitor@example.com");
-          return Response.json({ success: true, audit_logged: false });
-        };
-        const body = {
-          target_employee: "John Carter",
-          visitor_email: "visitor@example.com",
-        };
-        const response = await post("report", body);
-        assert.equal(response.status, 200);
-        assert.equal((await response.json()).audit_logged, false);
-        respond({ message: "workflow started" });
-        assert.equal((await post("report", body)).status, 502);
-        respond({ success: false, error: "Email rejected" });
-        assert.equal(
-          (await (await post("report", body)).json()).success,
-          false,
-        );
-      },
-    );
+    await check("handover and legacy route reject repeated/active/foreign requests without upstream", async () => {
+      transport = () => { throw new Error("Unexpected delivery"); };
+      const legacy = load("app/api/lead-capture/route.ts");
+      for (let attempt = 0; attempt < 5; attempt++) {
+        for (const target of ["John Carter", "Arthur Dent", "External User"]) {
+          const response = await post("report", { target_employee: target, visitor_email: "visitor@example.com" });
+          assert.equal(response.status, 403);
+          assert.equal((await response.json()).code, "HANDOVER_DISABLED");
+          assert.equal((await legacy.POST()).status, 403);
+        }
+      }
+    });
+    await check("concurrent handover requests cannot bypass disablement using forged proxy headers and never read the body", async () => {
+      let upstreamCalls = 0;
+      let bodyReads = 0;
+      transport = () => { upstreamCalls++; throw new Error("Unexpected delivery"); };
+      const legacy = load("app/api/lead-capture/route.ts");
+      const requests = Array.from({ length: 16 }, (_, i) => ({
+        url: "http://local.invalid/api/iam-hr/action?type=report",
+        headers: new Headers({
+          "X-Forwarded-For": `198.51.100.${i + 1}, 127.0.0.1`,
+          "CF-Connecting-IP": "127.0.0.1",
+        }),
+        json: async () => { bodyReads++; throw new Error("Body must not be read"); },
+      }));
+      const replies = await Promise.all(requests.flatMap(request => [action.POST(request), legacy.POST(request)]));
+      for (const response of replies) {
+        assert.equal(response.status, 403);
+        assert.equal(response.headers.get("Cache-Control"), "no-store");
+        assert.equal((await response.json()).code, "HANDOVER_DISABLED");
+      }
+      assert.equal(bodyReads, 0);
+      assert.equal(upstreamCalls, 0);
+    });
+    await check("handover query admits only exact allowlisted OFFBOARDED employees", async () => {
+      const sql = fs.readFileSync(repo + "/automation/sql/handover-eligible.sql", "utf8");
+      assert.equal((await db.query(sql, [email])).rows.length, 0); // reset restored ACTIVE
+      await db.query("UPDATE employees SET status='OFFBOARDED' WHERE email=$1", [email]);
+      assert.equal((await db.query(sql, [email])).rows.length, 1);
+      for (const target of [null, "john-carter@demo-corp.com", "john.carter@other.com", "missing@demo-corp.com"])
+        assert.equal((await db.query(sql, [target])).rows.length, 0);
+      await db.exec("INSERT INTO employees(full_name,email,status,access_groups) VALUES ('External','outsider@example.com','OFFBOARDED','')");
+      assert.equal((await db.query(sql, ["outsider@example.com"])).rows.length, 0);
+    });
+    await check("application uses the exact seven synthetic account IDs", () => {
+      assert.deepEqual(Object.entries(synthetic.SYNTHETIC_TARGETS), [
+        ["john.carter@demo-corp.com", "iamhr-john-carter"],
+        ["sarah.connor@demo-corp.com", "iamhr-sarah-connor"],
+        ["tchalla.udaku@demo-corp.com", "iamhr-tchalla-udaku"],
+        ["ellen.ripley@demo-corp.com", "iamhr-ellen-ripley"],
+        ["arthur.dent@demo-corp.com", "iamhr-arthur-dent"],
+        ["marty.mcfly@demo-corp.com", "iamhr-marty-mcfly"],
+        ["dana.scully@demo-corp.com", "iamhr-dana-scully"]
+      ]);
+    });
+    await check("offboarding allowlist rejects foreign and colliding addresses before upstream", async () => {
+      transport = () => { throw new Error("Unexpected upstream"); };
+      for (const target_email of ["john-carter@demo-corp.com", "john.carter@other.com", "outsider@demo-corp.com", "constructor@demo-corp.com"])
+        assert.equal((await post("offboard", { target_email })).status, 400);
+    });
+    await check("frontend posts to action path and preserves dashboard cache/reconciliation path", async () => {
+      const React = localRequire("react");
+      let hook = 0;
+      let requests = 0;
+      const cacheKeys = [];
+      const component = load("components/ph3/iam-hr-demo.tsx", {
+        fetch: async (url, init) => {
+          requests++;
+          assert.equal(url, "/api/iam-hr/action?type=offboard");
+          assert.equal(init.method, "POST");
+          assert.deepEqual(JSON.parse(init.body), { target_email: email, operation_id: String(id) });
+          assert.equal(new Headers(init.headers).get("X-N8N-Webhook-Secret"), null);
+          return Response.json(partialReply);
+        },
+        require: (name) => {
+          if (name === "react") return { ...React, useState: initial => [hook++ === 0 ? email : initial, () => {}] };
+          if (name === "swr") return { useSWRConfig: () => ({ mutate: async (key, callback) => {
+            cacheKeys.push(key);
+            if (callback) return callback();
+          } }) };
+          if (name === "@/lib/iam-hr") return library;
+          if (name.startsWith("@/components/ui/")) return { Button: () => null, Input: () => null };
+          return localRequire(name);
+        },
+      });
+      const tree = component.IamHrDemo({ employees: library.normalizeDashboard(partialReply.dashboard).employees, isLoading: false });
+      function findAction(node) {
+        if (!node || typeof node !== "object") return;
+        if (node.props?.onClick?.name === "handleOffboarding") return node.props.onClick;
+        for (const child of React.Children.toArray(node.props?.children)) {
+          const found = findAction(child);
+          if (found) return found;
+        }
+      }
+      const click = findAction(tree);
+      assert.equal(typeof click, "function");
+      await click();
+      assert.equal(requests, 1);
+      assert.deepEqual(cacheKeys, ["/api/iam-hr"]);
+    });
     // Render only the component with seeded selection; all network hooks are stubbed.
     await check(
       "partial/success UI keeps connector states and gates handover",
@@ -452,8 +608,9 @@ const email = "john.carter@demo-corp.com";
         assert(!partialHtml.includes("Send handover report"));
         const successHtml = render(completeDashboard);
         assert(successHtml.includes("Access Revoked Successfully"));
-        assert(successHtml.includes("Send handover report"));
-        assert(successHtml.includes("GCP IAM (shared demo identity)"));
+        assert(!successHtml.includes("Send handover report"));
+        assert(successHtml.includes("Public handover delivery is disabled"));
+        assert(successHtml.includes("GCP IAM (synthetic employee identity)"));
       },
     );
     console.log(

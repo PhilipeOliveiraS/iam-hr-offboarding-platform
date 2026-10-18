@@ -11,10 +11,11 @@
         0
       ],
       "parameters": {
-        "httpMethod": "GET",
+        "httpMethod": "POST",
         "path": "reset-system",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "webhookId": "830489b9-e391-45bf-babb-0c0e8d962e2a"
     },
@@ -36,7 +37,8 @@
             }
           ]
         }
-      }
+      },
+      "disabled": true
     },
     {
       "name": "Validate Request",
@@ -48,7 +50,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "const b=$json.body??{};\nconst email=typeof b.target_email==='string'?b.target_email.trim().toLowerCase():'';\nconst id=b.operation_id==null?null:String(b.operation_id);\nconst valid=\"reset\"==='reset'||(/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)&&email.length<=254&&(id===null||/^[1-9][0-9]{0,17}$/.test(id)));\nreturn [{json:{valid,kind:\"reset\",email:\"reset\"==='reset'?'*':email,operation_id:id,owner:String($execution.id),is_webhook:!!$json.webhookUrl}}];"
+        "jsCode": "const b=$json.body??{};\nconst id=b.operation_id==null?null:String(b.operation_id);\nreturn [{json:{valid:id===null||/^[1-9][0-9]{0,17}$/.test(id),kind:'reset',email:'*',operation_id:id,owner:String($execution.id),is_webhook:!!$json.webhookUrl}}];"
       }
     },
     {
@@ -502,7 +504,7 @@
         780
       ],
       "parameters": {
-        "jsCode": "return [{json:$json}];"
+        "jsCode": "const ctx=$json;\nreturn $('Reset Targets').first().json.targets.map(target=>({json:{...ctx,...target}}));"
       }
     },
     {
@@ -516,7 +518,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/demo-employee-identity@{{ $env.GCP_PROJECT_ID }}.iam.gserviceaccount.com",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/{{ $json.expected_email }}",
         "options": {
           "timeout": 8000,
           "response": {
@@ -548,7 +550,7 @@
         1040
       ],
       "parameters": {
-        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=typeof body?.email==='string' && body.email.startsWith('demo-employee-identity@');\nconst desired=body?.disabled!==true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
+        "jsCode": "const targets=$('GCP Context').all().map(item=>item.json);\nconst responses=$input.all();\nconst identities=targets.map((target,index)=>{\n  const response=responses[index]?.json??{};\n  let body=response.body;try { if(typeof body==='string') body=JSON.parse(body); } catch { body=null; }\n  const status=Number(response.statusCode??0);\n  const known=status>=200&&status<300&&body?.email===target.expected_email&&\n    (body.disabled===undefined||typeof body.disabled==='boolean');\n  const uncertain=!status||status===408||status===429||status>=500;\n  return {...target,probe_status:uncertain?'unknown':known?'succeeded':'failed',already_desired:known&&body.disabled!==true,http_status:status};\n});\nconst unknown=targets.some(t=>t.prior_status==='unknown')||responses.length!==7||targets.length!==7||identities.some(i=>i.probe_status==='unknown');\nconst failed=identities.some(i=>i.probe_status==='failed');\nconst mutate=!unknown&&!failed&&identities.some(i=>!i.already_desired);\nreturn [{json:{mutate,status:unknown?'unknown':failed?'failed':'succeeded',detail:{phase:'probe',identities,code:unknown?'OPERATOR_REVIEW_REQUIRED':failed?'STATE_READ_FAILED':mutate?'WRITE_REQUIRED':'ALREADY_IN_DESIRED_STATE'}}}];"
       }
     },
     {
@@ -619,7 +621,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/demo-employee-identity@{{ $env.GCP_PROJECT_ID }}.iam.gserviceaccount.com:enable",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $env.GCP_PROJECT_ID }}/serviceAccounts/{{ $json.expected_email }}:enable",
         "options": {
           "timeout": 8000,
           "response": {
@@ -651,7 +653,7 @@
         1040
       ],
       "parameters": {
-        "jsCode": "const status=Number($json.statusCode??0);\nlet body=$json.body;try{if(typeof body==='string'&&body.trim())body=JSON.parse(body);}catch{body=null;}\nconst ok=status>=200&&status<300 && true;\nconst rejected=[400,401,403,404,405,422,429].includes(status);\nreturn [{json:{status:ok?'succeeded':rejected?'failed':'unknown',detail:{phase:'write',http_status:status||null,code:ok?'APPLIED':rejected?'REQUEST_REJECTED':'WRITE_OUTCOME_UNKNOWN'}}}];"
+        "jsCode": "const targets=$('GCP Expand Writes').all().map(i=>i.json);\nconst responses=$input.all();\nconst identities=targets.map((target,index)=>{\n const status=Number(responses[index]?.json.statusCode??0);\n return {account_id:target.account_id,status:status>=200&&status<300?'succeeded':[400,401,403,404,405,422].includes(status)?'failed':'unknown'};\n});\nconst status=responses.length!==targets.length||identities.some(i=>i.status==='unknown')?'unknown':identities.some(i=>i.status==='failed')?'failed':'succeeded';\nreturn [{json:{status,detail:{phase:'write',identities}}}];"
       }
     },
     {
@@ -838,6 +840,53 @@
           "responseCode": "={{ $json.http_status ?? 200 }}"
         }
       }
+    },
+    {
+      "name": "Load Reset Employees",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "load-reset-employees",
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(jsonb_agg(email ORDER BY id), '[]'::jsonb) AS emails FROM employees;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Reset Targets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "reset-targets",
+      "position": [
+        1300,
+        780
+      ],
+      "parameters": {
+        "jsCode": "const mapping = {\n  \"john.carter@demo-corp.com\": \"iamhr-john-carter\",\n  \"sarah.connor@demo-corp.com\": \"iamhr-sarah-connor\",\n  \"tchalla.udaku@demo-corp.com\": \"iamhr-tchalla-udaku\",\n  \"ellen.ripley@demo-corp.com\": \"iamhr-ellen-ripley\",\n  \"arthur.dent@demo-corp.com\": \"iamhr-arthur-dent\",\n  \"marty.mcfly@demo-corp.com\": \"iamhr-marty-mcfly\",\n  \"dana.scully@demo-corp.com\": \"iamhr-dana-scully\"\n};\nconst entries = Object.entries(mapping);\nif (entries.length !== 7 || new Set(entries.map(([, id]) => id)).size !== 7 ||\n    entries.some(([, id]) => !/^iamhr-[a-z0-9-]+$/.test(id))) {\n  throw new Error('INVALID_SYNTHETIC_MAPPING');\n}\nconst project = $env.GCP_PROJECT_ID;\nif (typeof project !== 'string' || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) {\n  throw new Error('INVALID_GCP_PROJECT');\n}\nconst emails = $json.emails;\nif (!Array.isArray(emails) || emails.length !== 7 || new Set(emails).size !== 7 ||\n    emails.some(email => typeof email !== 'string' || !Object.hasOwn(mapping, email))) {\n  throw new Error('INVALID_RESET_TARGETS');\n}\nconst targets = emails.map(email => ({employee_email:email, account_id:mapping[email], expected_email:`${mapping[email]}@${project}.iam.gserviceaccount.com`}));\nreturn [{json:{...$('Validate Request').first().json, targets}}];"
+      }
+    },
+    {
+      "name": "GCP Expand Writes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "gcp-expand-writes",
+      "position": [
+        1300,
+        780
+      ],
+      "parameters": {
+        "jsCode": "const check=$('GCP Check State').first().json;\nif(check.mutate!==true) throw new Error('WRITE_NOT_AUTHORIZED');\nreturn check.detail.identities.filter(i=>i.probe_status==='succeeded'&&!i.already_desired).map(i=>({json:i}));"
+      }
     }
   ],
   "connections": {
@@ -878,7 +927,7 @@
       "main": [
         [
           {
-            "node": "Claim Operation",
+            "node": "Load Reset Employees",
             "type": "main",
             "index": 0
           }
@@ -1201,7 +1250,7 @@
       "main": [
         [
           {
-            "node": "GCP Apply",
+            "node": "GCP Expand Writes",
             "type": "main",
             "index": 0
           }
@@ -1365,6 +1414,46 @@
         [
           {
             "node": "Scheduled Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Reset Employees": {
+      "main": [
+        [
+          {
+            "node": "Reset Targets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Targets": {
+      "main": [
+        [
+          {
+            "node": "Claim Operation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Expand Writes": {
+      "main": [
+        [
+          {
+            "node": "GCP Apply",
             "type": "main",
             "index": 0
           }

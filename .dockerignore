@@ -1,0 +1,33 @@
+# Allow only application sources and build configuration into the context.
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!next-env.d.ts
+!tsconfig.json
+!postcss.config.mjs
+!app/
+!app/**
+!components/
+!components/**
+!lib/
+!lib/**
+!public/
+!public/**
+# Exclude sensitive files even if placed within an allowed directory.
+**/.env*
+**/node_modules
+**/.next
+**/.git
+**/.aws
+**/.codex
+**/.agents
+**/credentials/**
+**/secrets/**
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*credentials*.json
+**/*service-account*.json
+**/*.log
