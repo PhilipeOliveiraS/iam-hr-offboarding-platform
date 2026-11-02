@@ -458,49 +458,45 @@ const email = "john.carter@demo-corp.com";
         assert.equal((await post("invalid", {})).status, 400);
       },
     );
-    await check("handover and legacy route reject repeated/active/foreign requests without upstream", async () => {
-      transport = () => { throw new Error("Unexpected delivery"); };
+    await check("handover requires server auth and the exact protected contract; legacy remains closed", async () => {
       const legacy = load("app/api/lead-capture/route.ts");
-      for (let attempt = 0; attempt < 5; attempt++) {
-        for (const target of ["John Carter", "Arthur Dent", "External User"]) {
-          const response = await post("report", { target_employee: target, visitor_email: "visitor@example.com" });
-          assert.equal(response.status, 403);
-          assert.equal((await response.json()).code, "HANDOVER_DISABLED");
-          assert.equal((await legacy.POST()).status, 403);
-        }
-      }
+      let calls = 0;
+      transport = async () => { calls++; throw new Error("Unexpected upstream"); };
+      delete fakeEnvironment.N8N_WEBHOOK_KEY;
+      assert.equal((await post("report", {operation_id:"158",target_email:email,visitor_email:"visitor@example.com"})).status,503);
+      fakeEnvironment.N8N_WEBHOOK_KEY="mock-header-key";
+      for(const visitor_email of ["a@example.com,b@example.com","a@example.com\r\nBcc:x@example.com","a@example.com\n", "a@example.com;other@example.com"])
+        assert.equal((await post("report",{operation_id:"158",target_email:email,visitor_email})).status,400);
+      for(const body of [{target_employee:"John Carter",visitor_email:"a@example.com"},{operation_id:"158",target_email:"outsider@example.com",visitor_email:"a@example.com"}])
+        assert.equal((await post("report",body)).status,400);
+      for(let i=0;i<16;i++) assert.equal((await legacy.POST()).status,403);
+      assert.equal(calls,0);
     });
-    await check("concurrent handover requests cannot bypass disablement using forged proxy headers and never read the body", async () => {
-      let upstreamCalls = 0;
-      let bodyReads = 0;
-      transport = () => { upstreamCalls++; throw new Error("Unexpected delivery"); };
-      const legacy = load("app/api/lead-capture/route.ts");
-      const requests = Array.from({ length: 16 }, (_, i) => ({
-        url: "http://local.invalid/api/iam-hr/action?type=report",
-        headers: new Headers({
-          "X-Forwarded-For": `198.51.100.${i + 1}, 127.0.0.1`,
-          "CF-Connecting-IP": "127.0.0.1",
-        }),
-        json: async () => { bodyReads++; throw new Error("Body must not be read"); },
-      }));
-      const replies = await Promise.all(requests.flatMap(request => [action.POST(request), legacy.POST(request)]));
-      for (const response of replies) {
-        assert.equal(response.status, 403);
-        assert.equal(response.headers.get("Cache-Control"), "no-store");
-        assert.equal((await response.json()).code, "HANDOVER_DISABLED");
+    await check("handover forwards only approved fields, authenticates upstream and sanitizes every public result", async () => {
+      transport=async (url,init)=>{
+        assert.equal(url,fakeEnvironment.N8N_REPORT_URL);
+        assert.equal(init.headers["X-N8N-Webhook-Secret"],"mock-header-key");
+        assert.deepEqual(JSON.parse(init.body),{operation_id:"158",target_email:email,visitor_email:"visitor@example.com"});
+        return Response.json({code:"HANDOVER_ACCEPTED",repeated:true,message:"unsafe provider details",recipient:"other@example.com",sql:"secret"});
+      };
+      const response=await post("report",{operation_id:"158",target_email:email,visitor_email:" Visitor@Example.com ",content:"ignored",full_name:"ignored"});
+      assert.equal(response.status,200);
+      const result=await response.json();assert.equal(result.repeated,true);assert(!JSON.stringify(result).includes("unsafe"));assert(!JSON.stringify(result).includes("other@example.com"));assert(!JSON.stringify(result).includes("secret"));
+      for(const code of ["HANDOVER_PREPARING","HANDOVER_IN_PROGRESS","HANDOVER_UNKNOWN","HANDOVER_FAILED_BEFORE_SEND","HANDOVER_LIMIT_REACHED","HANDOVER_NOT_ELIGIBLE"]){
+        respond({code});const reply=await post("report",{operation_id:"158",target_email:email,visitor_email:"visitor@example.com"});
+        assert.equal((await reply.json()).code,code);
       }
-      assert.equal(bodyReads, 0);
-      assert.equal(upstreamCalls, 0);
+      respond({error:"SQL and credential details"},500);
+      const failure=await post("report",{operation_id:"158",target_email:email,visitor_email:"visitor@example.com"});
+      assert.equal((await failure.json()).code,"HANDOVER_UNKNOWN");
+      delete fakeEnvironment.N8N_WEBHOOK_KEY;
     });
-    await check("handover query admits only exact allowlisted OFFBOARDED employees", async () => {
+    await check("handover query is linked to a completed operation rather than employee state alone", async () => {
+      await db.exec(fs.readFileSync(repo+"/database/003-handover-delivery.sql","utf8"));
       const sql = fs.readFileSync(repo + "/automation/sql/handover-eligible.sql", "utf8");
-      assert.equal((await db.query(sql, [email])).rows.length, 0); // reset restored ACTIVE
-      await db.query("UPDATE employees SET status='OFFBOARDED' WHERE email=$1", [email]);
-      assert.equal((await db.query(sql, [email])).rows.length, 1);
-      for (const target of [null, "john-carter@demo-corp.com", "john.carter@other.com", "missing@demo-corp.com"])
-        assert.equal((await db.query(sql, [target])).rows.length, 0);
-      await db.exec("INSERT INTO employees(full_name,email,status,access_groups) VALUES ('External','outsider@example.com','OFFBOARDED','')");
-      assert.equal((await db.query(sql, ["outsider@example.com"])).rows.length, 0);
+      await db.query("UPDATE employees SET status='OFFBOARDED' WHERE email=$1",[email]);
+      assert.equal((await db.query(sql,[email,"999999"])).rows.length,0);
+      assert.equal((await db.query(sql,["outsider@example.com","999999"])).rows.length,0);
     });
     await check("application uses the exact seven synthetic account IDs", () => {
       assert.deepEqual(Object.entries(synthetic.SYNTHETIC_TARGETS), [
@@ -608,8 +604,8 @@ const email = "john.carter@demo-corp.com";
         assert(!partialHtml.includes("Send handover report"));
         const successHtml = render(completeDashboard);
         assert(successHtml.includes("Access Revoked Successfully"));
-        assert(!successHtml.includes("Send handover report"));
-        assert(successHtml.includes("Public handover delivery is disabled"));
+        assert(successHtml.includes("Send handover report"));
+        assert(successHtml.includes("Email for the handover report"));
         assert(successHtml.includes("GCP IAM (synthetic employee identity)"));
       },
     );

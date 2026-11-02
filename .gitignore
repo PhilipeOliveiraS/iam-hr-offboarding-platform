@@ -66,3 +66,7 @@ __pycache__/
 # Unverified legacy n8n exports: retain locally, never treat as deployment sources
 /[[]GET] Public Dashboard Data (NO-CACHE).json
 /[[]POST] Execute IAM-HR Action (OPTIMIZED).json
+
+# Local agent configs (Pop!_OS workstation only)
+.codex/
+docs/agent-reviews/

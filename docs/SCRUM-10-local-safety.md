@@ -12,13 +12,11 @@ Reset inspects seven accounts, aggregates results, authorizes once, expands only
 
 Local offboarding/reset exports require Header Auth; operators must bind actual credentials during a deliberate deployment. Reset uses POST and its Schedule Trigger is disabled in the export. These source settings do not prove published activation or credential configuration.
 
-## Local handover behavior
+## Handover restoration
 
-The UI previously submitted reports through `POST /api/iam-hr?type=report`; the dashboard path now exports GET only. In the current checkout, `POST /api/iam-hr/action?type=report` and `POST /api/lead-capture` return `403 HANDOVER_DISABLED` before reading bodies or calling upstream, regardless of environment values. No environment flag reactivates these routes without a code change.
+The original handover is being restored with the approved persistent controls; its prior disablement was temporary. The action route now validates `operation_id`, `target_email` and `visitor_email`, requires server webhook configuration and returns sanitized results. The legacy route stays disabled. Workflow 04 preserves the previous Gemini/parser/Gmail configuration through the deployment publisher, which refuses incompatible provider changes and unexpected revisions.
 
-The operation ledger covers offboarding/reset, not email reservations, quotas or delivery deduplication. `automation/sql/handover-eligible.sql` is a local query contract accepting an exact allowlisted email with an OFFBOARDED employee. It is not a published workflow or delivery pipeline. Local route rejection does not protect a separate direct published endpoint or establish whether that endpoint is active.
-
-A future delivery design would need an atomic reservation by operation/cycle and recipient, a persistent quota with a defined window, conservative handling of uncertain sends, server-only webhook authentication, prevention of direct bypass, and exact-email eligibility for a completed operation. An uncertain reservation must not be resent automatically. Concurrent tests and published configuration review are needed before reintroducing delivery. The confirmed edge action limit alone does not establish these email controls.
+Migration 003 reserves before providers, atomically enforces the approved configurable global 20-reservation rolling-24-hour limit and deduplicates by operation/normalized recipient. Failed and uncertain reservations count. Only a completed current-cycle synthetic operation with all connectors succeeded is eligible. A single owning execution can authorize Gmail once; `sending` and `unknown` never expire into permission to resend. Acceptance/audit commit together; failure leaves the sending fence. This does not promise external exactly-once delivery. See the runbook for rollout status, abandoned-request review, rollback and the pending real email test.
 
 ## Verification limits
 

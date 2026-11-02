@@ -5,8 +5,10 @@
   "name": "iam-validation",
   "private": true,
   "scripts": {
-    "test": "node recovery.mjs && node workflow.mjs && node frontend-contracts.cjs",
+    "test": "node recovery.mjs && node workflow.mjs && node handover.mjs && node frontend-contracts.cjs",
     "test:workflow": "node workflow.mjs",
-    "test:contracts": "node frontend-contracts.cjs"
+    "test:contracts": "node frontend-contracts.cjs",
+    "test:handover": "node handover.mjs",
+    "test:handover-recovery": "node handover-recovery.mjs"
   }
 }

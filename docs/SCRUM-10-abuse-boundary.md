@@ -30,7 +30,7 @@ The operation ledger deduplicates completed operations per cycle/target and lock
 - `POST /api/iam-hr/action?type=offboard` retains validation, payload and the server-authenticated n8n transport. The frontend reconciles results through the dashboard cache.
 - `N8N_WEBHOOK_KEY` stays in server transport. Forged identity headers are not forwarded as webhook payload or used to replace that key.
 - The explicit seven-target allowlist rejects external accounts before upstream access.
-- In this checkout, report POSTs on the action path and legacy lead POSTs return `403 HANDOVER_DISABLED` before body parsing or upstream access. This does not prove the published handover workflow state.
+- The legacy lead route stays blocked. The restored report action requires a server-authenticated webhook and persistent admission controls in workflow 04; see the runbook for rollout status. The configurable 20-reservation rolling-24-hour global ceiling controls consumption, while per-operation/recipient uniqueness controls repeat delivery. Neither replaces the edge request limiter or proves complete abuse prevention.
 
 `tests/recovery.mjs` includes 16 redeliveries of a completed operation, with and without its ID, without changing runtime, operations, steps, events, employees or audit records. PGlite does not establish concurrency across real production Postgres connections.
 

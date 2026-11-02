@@ -529,7 +529,7 @@
         1040
       ],
       "parameters": {
-        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=body?.email===ctx.expected_email && typeof body.disabled==='boolean';\nconst desired=body?.disabled===true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
+        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=body?.email===ctx.expected_email && (body.disabled===undefined||typeof body.disabled==='boolean');\nconst desired=body?.disabled===true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
       }
     },
     {

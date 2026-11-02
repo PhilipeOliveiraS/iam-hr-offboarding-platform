@@ -18,6 +18,8 @@ Offboarding updates the employee record first but exposes `RUNNING`, `PARTIAL` o
 | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `app/iam-hr-sandbox/page.tsx`, `components/ph3/iam-hr-demo.tsx` | Integrated interface, preserving the local layout and visual identity     |
 | `app/api/iam-hr/route.ts`, `lib/iam-hr.ts`                      | Proxy, contract validation and shared types                               |
+| `database/003-handover-delivery.sql` | Persistent handover admission, quota and send authorization |
+| `automation/n8n/n8n-04-handover-report.json` | Sanitized handover deployment template |
 | `database/002-operation-recovery.sql`                           | Additive migration for the existing demo database                         |
 | `mock-erp/main.py`                                              | ERP mock, including `GET /state`                                          |
 | `automation/n8n/n8n-01-get-dashboard-data.json`                 | Dashboard workflow                                                        |
@@ -26,9 +28,11 @@ Offboarding updates the employee record first but exposes `RUNNING`, `PARTIAL` o
 | `tests/`                                                        | PostgreSQL-in-memory, workflow simulation and frontend/API contract tests |
 | [DEPLOY-CORTEX.md](DEPLOY-CORTEX.md)                                        | Deployment, recovery, rollback and validation instructions                |
 
-These sources extend an existing installation. The frontend Compose definition is included; the existing backend stack, production schema/seed, credentials and published handover are not supplied here. `tests/fixtures/schema-original.sql` is only an in-memory test fixture; never apply it to the demonstration database.
+These sources extend an existing installation. The frontend Compose definition is included; the existing backend stack, production schema/seed, credentials and credential-bearing production handover exports are not supplied here; workflow 04 is supplied only as a sanitized deployment template. `tests/fixtures/schema-original.sql` is only an in-memory test fixture; never apply it to the demonstration database.
 
-The separate `app/api/lead-capture/route.ts` previously provided a local proxy using `N8N_LEAD_CAPTURE_URL`. The UI previously used `/api/iam-hr?type=report`. In this checkout, `POST /api/iam-hr/action?type=report` and `POST /api/lead-capture` return HTTP 403 with `HANDOVER_DISABLED` before reading the body or forwarding upstream. The dashboard path exports GET only. These files do not establish the state of the published handover workflow.
+Handover restoration uses `POST /api/iam-hr/action?type=report` with `operation_id`, `target_email` and `visitor_email`. The legacy `POST /api/lead-capture` remains blocked. The server requires webhook authentication and the workflow reserves delivery in Postgres before calling either provider. The reviewed workflow 04 export intentionally omits credential bindings and contains a provider URL placeholder: deploy it through `automation/deploy/publish-handover.py`, which preserves the existing Gemini/parser/Gmail nodes and reuses existing bindings. Do not import the sanitized export directly.
+
+The approved consumption setting is **20 new reservations globally per rolling 24 hours**, configurable in Postgres. Reservations are unique per operation and normalized recipient; failed and uncertain requests count toward the limit. This is neither an exact financial ceiling nor complete abuse prevention. See the runbook for deployment status, recovery and the pending single-email acceptance test.
 
 ## Local development and tests
 
@@ -36,7 +40,7 @@ Use Node.js compatible with the committed Next.js lockfile. The local integratio
 
 - `N8N_GET_DATA_URL`: workflow 01 production webhook.
 - `N8N_OFFBOARD_URL`: workflow 02 production webhook.
-- `N8N_REPORT_URL`: historical handover setting; ignored by the disabled local delivery routes.
+- `N8N_REPORT_URL`: internal workflow 04 production webhook; report requests require `N8N_WEBHOOK_KEY`.
 - `N8N_WEBHOOK_KEY`: server-side webhook header value, passed through by Compose. Bind matching Header Auth credentials in n8n; configuring this variable alone does not authenticate a webhook.
 
 ```sh
@@ -75,11 +79,11 @@ This applies to **ERP Inspect, ERP Apply, GCP Inspect and GCP Apply** in each wo
 
 The [canonical runbook](DEPLOY-CORTEX.md#confirmed-public-validation) records the confirmed public URL, HTTP checks and one Cloudflare rate-limit test round. No valid offboarding or reset action was submitted during that validation. Those checks do not establish end-to-end connector recovery, load capacity or production readiness.
 
-Remaining acceptance work includes real partial failure and selective resume, concurrent reset/offboarding exclusion, Firefox hydration, and comparison of local sources with current published workflows. Published handover configuration and email receipt are not established by the current validation.
+Operation 158 subsequently demonstrated real selective recovery without repeating Postgres/ERP writes and with independently confirmed GCP disabled=true. Remaining acceptance work includes concurrent reset/offboarding exclusion, Firefox hydration, and remaining published-workflow comparisons. The restored handover has real provider-acceptance evidence for requests 1 and 2; the user confirmed receipt of request 1. Historical prompt/template fidelity remains under review after a user-reported difference. These observations do not establish production readiness or external exactly-once delivery.
 
 ## Safety boundaries
 
-The local offboarding/reset exports require Header Auth with operator-bound credentials. Reset uses POST; its Schedule Trigger is disabled in the export. Published workflow activation cannot be inferred from exports. The local handover routes reject delivery; there is no persistent email reservation, quota or delivery deduplication in this checkout. The confirmed edge action rate limit does not establish email delivery controls or prevent every possible origin bypass.
+The local offboarding/reset exports require Header Auth with operator-bound credentials. Reset uses POST; its Schedule Trigger is disabled in the export. Published workflow activation cannot be inferred from exports. The legacy handover route rejects delivery; the restored action route requires authentication and uses the persistent reservation/quota workflow. The confirmed edge action rate limit does not establish email delivery controls or prevent every possible origin bypass.
 
 No external exactly-once guarantee is claimed. A timeout does not prove a remote operation stopped; the proxy keeps its 55-second timeout through body consumption, subject to any shorter hosting limit.
 

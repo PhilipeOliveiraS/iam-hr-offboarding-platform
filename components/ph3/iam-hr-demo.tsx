@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useSWRConfig } from "swr";
 import {
   Wrench,
@@ -9,8 +9,10 @@ import {
   ShieldAlert,
   ArrowRight,
   RotateCcw,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   normalizeOffboarding,
   readApiResponse,
@@ -40,6 +42,9 @@ export function IamHrDemo({
   const [selectedEmail, setSelectedEmail] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [visitorEmail, setVisitorEmail] = useState("");
+  const [isSendingReport, setIsSendingReport] = useState(false);
+  const [reportLocked, setReportLocked] = useState(false);
 
   const selectedEmployee = employees.find(
     (employee) => employee.Email === selectedEmail,
@@ -63,6 +68,28 @@ export function IamHrDemo({
   function chooseEmployee(email: string) {
     setSelectedEmail(email);
     setStatusMsg("");
+    setVisitorEmail("");
+    setReportLocked(false);
+  }
+
+  async function handleLeadCapture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedEmployee || !operation || !offboardingComplete || blocked || isSendingReport || reportLocked) return;
+    setIsSendingReport(true);
+    setStatusMsg("Preparing your handover report…");
+    try {
+      const response = await fetch(`${API_BASE}/action?type=report`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operation_id: operation.id, target_email: selectedEmployee.Email, visitor_email: visitorEmail.trim() }),
+      });
+      const result = await response.json();
+      if (typeof result.code !== "string" || typeof result.message !== "string") throw new Error("Invalid response");
+      setStatusMsg(result.message);
+      setReportLocked(!["INVALID_REQUEST", "HANDOVER_LIMIT_REACHED", "HANDOVER_UNAVAILABLE", "HANDOVER_NOT_ELIGIBLE"].includes(result.code));
+    } catch {
+      setReportLocked(true);
+      setStatusMsg("Sending could not be confirmed. Do not submit again; the request requires review.");
+    } finally { setIsSendingReport(false); }
   }
 
   async function handleOffboarding() {
@@ -136,9 +163,22 @@ export function IamHrDemo({
             </p>
           </div>
           <ConnectorResults operation={operation} />
-          <p className="text-sm text-slate-400">
-            Public handover delivery is disabled pending persistent abuse controls.
-          </p>
+          <div className="pt-4 border-t border-emerald-500/20">
+            <p className="text-sm font-medium text-slate-200 mb-3">📋 Get AI-Generated Handover Report?</p>
+            <form onSubmit={handleLeadCapture} className="flex gap-2">
+              <Input type="email" required maxLength={254} aria-label="Email for the handover report"
+                placeholder="your.email@company.com"
+                className="bg-slate-900 border-slate-700 focus:ring-emerald-500 text-slate-200 placeholder:text-slate-500"
+                value={visitorEmail} onChange={(event) => setVisitorEmail(event.target.value)}
+                disabled={isSendingReport || reportLocked || blocked} />
+              <Button type="submit" aria-label="Send handover report"
+                disabled={!visitorEmail.trim() || isSendingReport || reportLocked || blocked}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white whitespace-nowrap">
+                {isSendingReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              </Button>
+            </form>
+            <p className="text-[10px] text-slate-500 mt-2 italic">Contextual AI draft • Demonstration data • Provider acceptance does not guarantee inbox delivery.</p>
+          </div>
           {feedback}
           <Button
             variant="ghost"

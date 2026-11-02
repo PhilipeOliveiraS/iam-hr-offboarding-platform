@@ -274,22 +274,26 @@ for (const [label, state] of [
   ["string", {disabled:"false"}], ["number", {disabled:0}],
   ["false", {disabled:false}], ["true", {disabled:true}],
 ]) {
-  const malformed=typeof state.disabled!=="boolean";
+  const malformed=state.disabled!==undefined&&typeof state.disabled!=="boolean";
   for (const prior_status of ["pending", "unknown"]) {
     const [probe]=codeNode(workflows[0],"GCP Check State",[{
       statusCode:200,body:JSON.stringify({email:john.expected_email,...state}),
     }],{"GCP Context":[{...john,prior_status}]});
     const uncertain=prior_status==="unknown";
     const message=`disabled=${label}, prior_status=${prior_status}`;
-    assert.equal(probe.mutate,!malformed&&!uncertain&&state.disabled===false,message);
+    assert.equal(probe.mutate,!malformed&&!uncertain&&state.disabled!==true,message);
     assert.equal(probe.status,uncertain?"unknown":!malformed&&state.disabled?"succeeded":"failed",message);
     assert.equal(probe.detail.code,malformed?"STATE_READ_FAILED":uncertain?"OPERATOR_REVIEW_REQUIRED":state.disabled?"ALREADY_IN_DESIRED_STATE":"WRITE_REQUIRED",message);
   }
 }
-console.log("PASS: offboarding GCP state requires boolean disabled; malformed states cannot authorize writes; false requires write, true skips write, unknown remains blocked.");
+console.log("PASS: offboarding GCP state accepts omitted or boolean disabled; invalid types block writes; omitted/false require write, true skips write, unknown remains blocked.");
 for(const email of [john.expected_email.replace("test-project","wrong-project"),john.expected_email+".evil",john.expected_email.replace("john-carter","sarah-connor")]) {
-  const [probe]=codeNode(workflows[0],"GCP Check State",[{statusCode:200,body:JSON.stringify({email,disabled:false})}],{"GCP Context":[john]});
-  assert.equal(probe.mutate,false);
+  for (const state of [{}, {disabled:false}, {disabled:true}]) {
+    const [probe]=codeNode(workflows[0],"GCP Check State",[{statusCode:200,body:JSON.stringify({email,...state})}],{"GCP Context":[john]});
+    assert.equal(probe.mutate,false);
+    assert.equal(probe.status,"failed");
+    assert.equal(probe.detail.code,"STATE_READ_FAILED");
+  }
 }
 const targets=resetTargets.targets;
 const responses=targets.map(t=>({statusCode:200,body:JSON.stringify({email:t.expected_email,disabled:true})}));
