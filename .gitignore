@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -14,7 +14,7 @@
 /coverage
 
 # next.js
-/.next/
+.next/
 /out/
 
 # production
@@ -39,3 +39,34 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local recovery artifacts and private material
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.dump
+*.backup
+*.bak
+*.log
+backups/
+dumps/
+credentials/
+secrets/
+*.key
+*.p12
+*.pfx
+service-account*.json
+credentials*.json
+mock-erp/seed.json
+__pycache__/
+*.pyc
+.venv/
+
+# Unverified legacy n8n exports: retain locally, never treat as deployment sources
+/[[]GET] Public Dashboard Data (NO-CACHE).json
+/[[]POST] Execute IAM-HR Action (OPTIMIZED).json
+
+# Local agent configs (Pop!_OS workstation only)
+.codex/
+docs/agent-reviews/

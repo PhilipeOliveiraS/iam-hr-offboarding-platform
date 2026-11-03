@@ -1,0 +1,36 @@
+# Separate project: never merge this file with the factory stack.
+name: iam-hr-preview
+services:
+  iam-hr:
+    image: iam-hr:${IAM_HR_IMAGE_TAG:-cortex-preview}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      N8N_GET_DATA_URL: http://n8n:5678/webhook/iam-hr-data
+      N8N_OFFBOARD_URL: http://n8n:5678/webhook/iam-hr-action
+      N8N_WEBHOOK_KEY: "${N8N_WEBHOOK_KEY:-}"
+      # Optional for dashboard-only preview; verify paths/authentication before use.
+      N8N_REPORT_URL: "${N8N_REPORT_URL:-}"
+      N8N_LEAD_CAPTURE_URL: "${N8N_LEAD_CAPTURE_URL:-}"
+    networks:
+      - factory
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # Local page only: do not trigger n8n workflows from a healthcheck.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+networks:
+  factory:
+    external: true
+    name: factory_default

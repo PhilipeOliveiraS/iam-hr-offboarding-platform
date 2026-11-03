@@ -1,599 +1,383 @@
-// --- File: app/iam-hr-sandbox/page.tsx ---
+"use client";
 
-// Redesigned IAM-HR Sandbox inspired by dashboard structure
-
-// Features: Sidebar navigation, table view, status tracking, real-time updates
-
-
-
-import { IamHrDemo } from "@/components/ph3/iam-hr-demo";
+import useSWR from "swr";
+import {
+  hasRecoveryContract,
+  normalizeDashboard,
+  readApiResponse,
+  type Dashboard,
+} from "@/lib/iam-hr";
 
 import Link from "next/link";
-
 import {
-
   Shield,
-
   Users,
-
   Activity,
-
   Settings,
-
   Home,
-
   Clock,
-
   CheckCircle2,
-
   XCircle,
-
-  AlertCircle
-
+  Lock,
+  FileText,
+  type LucideIcon,
 } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
-
 import {
-
   Card,
-
   CardContent,
-
   CardDescription,
-
   CardHeader,
-
   CardTitle,
-
 } from "@/components/ui/card";
+import { IamHrDemo } from "@/components/ph3/iam-hr-demo";
 
-
+// --- DATA FETCHING LAYER ---
+const fetcher = async (url: string): Promise<Dashboard> => {
+  const response = await fetch(url, { cache: "no-store" });
+  return normalizeDashboard(await readApiResponse(response));
+};
 
 export default function IamHrSandboxPage() {
+  // Connect to Internal Proxy
+  const { data, error, isLoading } = useSWR<Dashboard>("/api/iam-hr", fetcher, {
+    refreshInterval: 5000,
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  });
+
+  const employees = data?.employees || [];
+  const recoveryReady = hasRecoveryContract(data);
+  const readOnly = !recoveryReady || Boolean(error);
+
+  // Business Logic / Metrics
+  const totalUsers = employees.length;
+  const activeUsers = employees.filter((e) => e.Status === "ACTIVE").length;
+  const revokedUsers = employees.filter(
+    (e) => e.Status === "OFFBOARDED",
+  ).length;
 
   return (
-
-    <main className="dark flex min-h-screen w-full bg-slate-950 text-slate-50">
-
-     
-
-      {/* Sidebar Navigation */}
-
-      <aside className="hidden md:flex w-64 flex-col border-r border-slate-800 bg-slate-900/50 p-6">
-
-        {/* Logo/Brand */}
-
-        <div className="mb-8">
-
+    <main className="dark flex min-h-screen w-full bg-slate-950 text-slate-50 font-sans selection:bg-blue-500/30">
+      {/* ENTERPRISE SIDEBAR */}
+      <aside className="hidden md:flex w-72 flex-col border-r border-slate-800 bg-slate-900/40 backdrop-blur-xl p-6">
+        <div className="mb-10">
           <Link
-
             href="/"
-
-            className="flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
-
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-
-            <Shield className="h-6 w-6" />
-
-            <span className="font-bold text-lg">IAM-HR Sandbox</span>
-
+            <div className="p-2 bg-blue-600/10 rounded-lg border border-blue-600/20">
+              <Shield className="h-6 w-6 text-blue-500" />
+            </div>
+            <div>
+              <h1 className="font-bold text-lg tracking-tight text-slate-100">
+                IAM Secure
+              </h1>
+              <p className="text-[10px] text-slate-500 font-medium tracking-wider uppercase">
+                Enterprise Sandbox
+              </p>
+            </div>
           </Link>
-
         </div>
 
-
-
-        {/* Navigation Menu */}
-
-        <nav className="flex-1 space-y-2">
-
-          <div className="text-xs font-semibold text-slate-400 uppercase mb-3">
-
-            Main Menu
-
+        <nav className="flex-1 space-y-1.5">
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-3">
+            Platform
           </div>
 
-         
+          <NavItem icon={Home} label="Dashboard" active />
+          <NavItem icon={Activity} label="Identity Lifecycle" />
+          <NavItem icon={Users} label="Directory" />
+          <NavItem icon={Lock} label="Access Policies" />
 
-          <Link
-
-            href="/"
-
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-50 hover:bg-slate-800/50 transition-colors"
-
-          >
-
-            <Home className="h-4 w-4" />
-
-            <span>Dashboard</span>
-
-          </Link>
-
-
-
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/10 text-primary border-l-2 border-primary">
-
-            <Activity className="h-4 w-4" />
-
-            <span className="font-medium">Offboarding</span>
-
+          <div className="mt-8 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-3">
+            Resources
           </div>
-
-
-
-          <Link
-
-            href="#"
-
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-50 hover:bg-slate-800/50 transition-colors"
-
-          >
-
-            <Users className="h-4 w-4" />
-
-            <span>Employees</span>
-
-          </Link>
-
-
-
-          <Link
-
-            href="#"
-
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-400 hover:text-slate-50 hover:bg-slate-800/50 transition-colors"
-
-          >
-
-            <Settings className="h-4 w-4" />
-
-            <span>IAM Settings</span>
-
-          </Link>
-
+          <NavItem icon={FileText} label="Audit Logs" />
+          <NavItem icon={Settings} label="Settings" />
         </nav>
 
-
-
-        {/* Help Card at Bottom */}
-
-        <Card className="bg-slate-800/50 border-slate-700">
-
-          <CardHeader className="pb-3">
-
-            <CardTitle className="text-sm">Need Help?</CardTitle>
-
-          </CardHeader>
-
-          <CardContent className="text-xs text-slate-400">
-
-            <p className="mb-3">Check our documentation for setup guides.</p>
-
-            <button className="w-full px-3 py-2 bg-primary/20 hover:bg-primary/30 text-primary rounded-md text-xs font-medium transition-colors">
-
-              Documentation
-
-            </button>
-
-          </CardContent>
-
-        </Card>
-
+        <div className="mt-auto pt-6 border-t border-slate-800/50">
+          <div className="flex items-center gap-3 px-2">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold">
+              PO
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-200">
+                Philipe Oliveira
+              </p>
+              <p className="text-xs text-slate-500">Admin Access</p>
+            </div>
+          </div>
+        </div>
       </aside>
 
-
-
-      {/* Main Content Area */}
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-       
-
-        {/* Top Bar */}
-
-        <header className="border-b border-slate-800 bg-slate-900/30 backdrop-blur-sm px-8 py-4">
-
-          <div className="flex items-center justify-between">
-
-            <div>
-
-              <h1 className="text-2xl font-bold tracking-tight">
-
-                Offboarding Workflow
-
-              </h1>
-
-              <p className="text-sm text-slate-400 mt-1">
-
-                Real-time IAM resource deprovisioning sandbox
-
-              </p>
-
-            </div>
-
-           
-
-            {/* Status Indicator */}
-
-            <div className="flex items-center gap-2">
-
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-
-              <span className="text-sm text-slate-400">System Active</span>
-
-            </div>
-
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col bg-gradient-to-b from-slate-950 to-slate-900">
+        {/* TOP HEADER */}
+        <header className="border-b border-slate-800/60 bg-slate-950/50 backdrop-blur-md px-8 py-5 flex items-center justify-between sticky top-0 z-50">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-100 tracking-tight">
+              Offboarding Workflow
+            </h2>
+            <p className="text-sm text-slate-400">
+              Automated identity provisioning and revocation.
+            </p>
           </div>
-
+          <div className="flex items-center gap-4">
+            <Badge
+              variant="outline"
+              className="border-emerald-500/20 text-emerald-400 bg-emerald-500/5 px-3 py-1"
+            >
+              <CheckCircle2 className="w-3 h-3 mr-2" />
+              {error
+                ? "Status Unavailable"
+                : isLoading
+                  ? "Loading Status"
+                  : !recoveryReady
+                    ? "Read Only"
+                    : data?.maintenance
+                      ? "Reset Pending"
+                      : data?.busy
+                        ? "Operation Running"
+                        : "System Operational"}
+            </Badge>
+          </div>
         </header>
 
-
-
-        {/* Scrollable Content */}
-
-        <div className="flex-1 overflow-y-auto px-8 py-6">
-
-         
-
-          {/* Stats Cards Row */}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-
-            <Card className="bg-slate-900 border-slate-700/50">
-
-              <CardHeader className="pb-3">
-
-                <div className="flex items-center justify-between">
-
-                  <CardDescription className="text-slate-400">
-
-                    Total Offboardings
-
-                  </CardDescription>
-
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-
-                </div>
-
-              </CardHeader>
-
-              <CardContent>
-
-                <div className="text-3xl font-bold">24</div>
-
-                <p className="text-xs text-slate-500 mt-1">This month</p>
-
-              </CardContent>
-
-            </Card>
-
-
-
-            <Card className="bg-slate-900 border-slate-700/50">
-
-              <CardHeader className="pb-3">
-
-                <div className="flex items-center justify-between">
-
-                  <CardDescription className="text-slate-400">
-
-                    Avg. Processing Time
-
-                  </CardDescription>
-
-                  <Clock className="h-4 w-4 text-blue-500" />
-
-                </div>
-
-              </CardHeader>
-
-              <CardContent>
-
-                <div className="text-3xl font-bold">58s</div>
-
-                <p className="text-xs text-slate-500 mt-1">Down from 40+ hours</p>
-
-              </CardContent>
-
-            </Card>
-
-
-
-            <Card className="bg-slate-900 border-slate-700/50">
-
-              <CardHeader className="pb-3">
-
-                <div className="flex items-center justify-between">
-
-                  <CardDescription className="text-slate-400">
-
-                    Security Score
-
-                  </CardDescription>
-
-                  <Shield className="h-4 w-4 text-primary" />
-
-                </div>
-
-              </CardHeader>
-
-              <CardContent>
-
-                <div className="text-3xl font-bold">98%</div>
-
-                <p className="text-xs text-slate-500 mt-1">Compliance rate</p>
-
-              </CardContent>
-
-            </Card>
-
+        <div className="flex-1 overflow-y-auto p-8 space-y-8">
+          {error && (
+            <p role="alert" className="text-amber-300">
+              Dashboard refresh failed. Displayed data may be stale; actions are
+              paused.
+            </p>
+          )}
+          {data && !recoveryReady && (
+            <p role="status" className="text-amber-300">
+              Operation tracking is unavailable. Actions are paused until the
+              service is ready.
+            </p>
+          )}
+          {/* KPI METRICS */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <MetricCard
+              title="Total Identities"
+              value={isLoading ? "-" : totalUsers}
+              icon={Users}
+            />
+            <MetricCard
+              title="Active Access"
+              value={isLoading ? "-" : activeUsers}
+              icon={CheckCircle2}
+              color="text-emerald-500"
+            />
+            <MetricCard
+              title="Revoked (current cycle)"
+              value={isLoading ? "-" : revokedUsers}
+              icon={XCircle}
+              color="text-red-500"
+            />
+            <MetricCard
+              title="Avg. Processing"
+              value={
+                data?.metrics?.avg_processing_ms == null
+                  ? "—"
+                  : `${(data.metrics.avg_processing_ms / 1000).toFixed(2)}s`
+              }
+              icon={Clock}
+              color="text-blue-500"
+              sub={`vs 48h manual · ${data?.metrics?.successful_count ?? 0} successful operations / ${data?.metrics?.window_hours ?? 24}h`}
+            />
           </div>
 
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            {/* LEFT: ACTION CONSOLE */}
+            <div className="xl:col-span-2 space-y-6">
+              <Card className="bg-slate-900/40 border-slate-800 shadow-xl">
+                <CardHeader>
+                  <CardTitle className="text-lg">Live Operations</CardTitle>
+                  <CardDescription>
+                    Execute immediate workflow actions. All events are logged.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <IamHrDemo
+                    employees={employees}
+                    isLoading={isLoading}
+                    busy={data?.busy}
+                    maintenance={data?.maintenance}
+                    readOnly={readOnly}
+                  />
+                </CardContent>
+              </Card>
 
-
-          {/* Main Demo Component */}
-
-          <Card className="bg-slate-900 border-slate-700/50 mb-8">
-
-            <CardHeader>
-
-              <CardTitle className="flex items-center gap-2">
-
-                <Activity className="h-5 w-5 text-primary" />
-
-                Live Offboarding Demo
-
-              </CardTitle>
-
-              <CardDescription>
-
-                Simulate an employee offboarding workflow with real-time IAM resource deprovisioning
-
-              </CardDescription>
-
-            </CardHeader>
-
-            <CardContent>
-
-              <IamHrDemo />
-
-            </CardContent>
-
-          </Card>
-
-
-
-          {/* Recent Activity Table */}
-
-          <Card className="bg-slate-900 border-slate-700/50">
-
-            <CardHeader>
-
-              <CardTitle>Recent Offboarding Activity</CardTitle>
-
-              <CardDescription>
-
-                Latest employee offboarding requests processed
-
-              </CardDescription>
-
-            </CardHeader>
-
-            <CardContent>
-
-              <div className="space-y-4">
-
-                {/* Table Header */}
-
-                <div className="grid grid-cols-4 gap-4 text-xs font-semibold text-slate-400 uppercase pb-2 border-b border-slate-800">
-
-                  <div>Employee</div>
-
-                  <div>Position</div>
-
-                  <div>Status</div>
-
-                  <div>Timestamp</div>
-
+              {/* LIVE TABLE */}
+              <Card className="bg-slate-900/40 border-slate-800 shadow-xl overflow-hidden">
+                <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">
+                      Identity Directory
+                    </CardTitle>
+                    <span className="text-xs text-slate-500 font-mono">
+                      SOURCE: POSTGRES + CONNECTOR RESULTS
+                    </span>
+                  </div>
+                </CardHeader>
+                <div className="p-0">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-slate-500 uppercase bg-slate-950/50 font-medium">
+                      <tr>
+                        <th className="px-6 py-3">User Identity</th>
+                        <th className="px-6 py-3">Role</th>
+                        <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3 text-right">Access Groups</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {employees.length === 0 && !isLoading ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="text-center py-8 text-slate-500"
+                          >
+                            No records found.
+                          </td>
+                        </tr>
+                      ) : (
+                        employees.map((emp) => (
+                          <tr
+                            key={emp.Email}
+                            className="hover:bg-slate-800/30 transition-colors"
+                          >
+                            <td className="px-6 py-4 font-medium text-slate-200">
+                              <div>{emp.FullName}</div>
+                              <div className="text-xs text-slate-500 font-normal">
+                                {emp.Email}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-slate-400">
+                              {emp.Position}
+                            </td>
+                            <td className="px-6 py-4">
+                              <StatusBadge status={emp.Status} />
+                            </td>
+                            <td className="px-6 py-4 text-right text-slate-500 font-mono text-xs">
+                              {emp.AccessGroups || "Default"}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
+              </Card>
+            </div>
 
-
-
-                {/* Table Rows */}
-
-                <ActivityRow
-
-                  name="Sarah Johnson"
-
-                  email="sarah.j@company.com"
-
-                  position="Designer"
-
-                  status="completed"
-
-                  time="2 min ago"
-
-                />
-
-                <ActivityRow
-
-                  name="Mike Chen"
-
-                  email="mike.c@company.com"
-
-                  position="Developer"
-
-                  status="processing"
-
-                  time="5 min ago"
-
-                />
-
-                <ActivityRow
-
-                  name="Emily Davis"
-
-                  email="emily.d@company.com"
-
-                  position="Manager"
-
-                  status="completed"
-
-                  time="12 min ago"
-
-                />
-
-                <ActivityRow
-
-                  name="Alex Rivera"
-
-                  email="alex.r@company.com"
-
-                  position="Analyst"
-
-                  status="failed"
-
-                  time="18 min ago"
-
-                />
-
-              </div>
-
-            </CardContent>
-
-          </Card>
-
-
-
-          {/* Footer Spacing */}
-
-          <div className="h-8"></div>
-
+            {/* RIGHT: INFO / HELP */}
+            <div className="space-y-6">
+              <Card className="bg-slate-900/40 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase tracking-wider text-slate-500">
+                    Workflow Architecture
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-3 rounded bg-slate-950 border border-slate-800 text-xs text-slate-400 space-y-2">
+                    <div className="flex justify-between">
+                      <span>Orchestrator:</span>{" "}
+                      <span className="text-slate-200">N8N (Self-Hosted)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Identity Provider:</span>{" "}
+                      <span className="text-slate-200">
+                        GCP IAM (demo service account)
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Infrastructure:</span>{" "}
+                      <span className="text-slate-200">Docker / Cortex-01</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    This module demonstrates an event-driven architecture for
+                    IAM (Identity & Access Management). Connector outcomes are
+                    recorded separately. Failed operations can resume within the
+                    same demo cycle.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
-
       </div>
-
     </main>
-
   );
-
 }
 
+// --- UI HELPERS ---
 
-
-// Activity Row Component
-
-function ActivityRow({
-
-  name,
-
-  email,
-
-  position,
-
-  status,
-
-  time
-
+function NavItem({
+  icon: Icon,
+  label,
+  active,
 }: {
-
-  name: string;
-
-  email: string;
-
-  position: string;
-
-  status: 'completed' | 'processing' | 'failed';
-
-  time: string;
-
+  icon: LucideIcon;
+  label: string;
+  active?: boolean;
 }) {
+  return (
+    <div
+      className={`flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-all ${active ? "bg-blue-600/10 text-blue-500" : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"}`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="text-sm font-medium">{label}</span>
+    </div>
+  );
+}
 
-  const statusConfig = {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+  color,
+  sub,
+}: {
+  title: string;
+  value: string | number;
+  icon: LucideIcon;
+  color?: string;
+  sub?: string;
+}) {
+  return (
+    <Card className="bg-slate-900/40 border-slate-800 shadow-lg">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-medium text-slate-400">{title}</span>
+          <Icon className={`h-4 w-4 ${color || "text-slate-500"}`} />
+        </div>
+        <div className="text-3xl font-bold text-slate-100">{value}</div>
+        {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
-    completed: {
-
-      icon: CheckCircle2,
-
-      color: 'text-green-500 border-green-500',
-
-      bg: 'bg-green-500/10',
-
-      label: 'Completed'
-
-    },
-
-    processing: {
-
-      icon: Clock,
-
-      color: 'text-blue-500 border-blue-500',
-
-      bg: 'bg-blue-500/10',
-
-      label: 'Processing'
-
-    },
-
-    failed: {
-
-      icon: XCircle,
-
-      color: 'text-red-500 border-red-500',
-
-      bg: 'bg-red-500/10',
-
-      label: 'Failed'
-
-    }
-
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    ACTIVE: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+    OFFBOARDED: "text-red-400 bg-red-500/10 border-red-500/20",
+    PENDING: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+    RUNNING: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+    PARTIAL: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+    UNKNOWN: "text-amber-400 bg-amber-500/10 border-amber-500/20",
   };
-
-
-
-  const config = statusConfig[status];
-
-  const Icon = config.icon;
-
-
+  const style = styles[status] || styles.UNKNOWN;
 
   return (
-
-    <div className="grid grid-cols-4 gap-4 items-center py-3 border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30 transition-colors rounded-lg px-2">
-
-      <div>
-
-        <div className="font-medium text-slate-200">{name}</div>
-
-        <div className="text-xs text-slate-500">{email}</div>
-
-      </div>
-
-      <div className="text-sm text-slate-400">{position}</div>
-
-      <div>
-
-        <Badge
-
-          variant="outline"
-
-          className={`${config.color} ${config.bg} flex items-center gap-1 w-fit`}
-
-        >
-
-          <Icon className="h-3 w-3" />
-
-          {config.label}
-
-        </Badge>
-
-      </div>
-
-      <div className="text-sm text-slate-500">{time}</div>
-
-    </div>
-
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${style}`}
+    >
+      {status}
+    </span>
   );
-
 }

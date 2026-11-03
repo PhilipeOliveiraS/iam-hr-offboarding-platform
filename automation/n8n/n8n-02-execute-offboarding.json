@@ -1,0 +1,1286 @@
+{
+  "name": "IAM-HR - Execute Offboarding",
+  "nodes": [
+    {
+      "name": "Receive Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "id": "f7731877-5aae-4ffa-8534-93510deb9eef",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "iam-hr-action",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "webhookId": "5bc92735-b455-415a-b35d-4831ec708d25"
+    },
+    {
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "d3bcc7a6-adb5-498c-b0b7-2df13c776050",
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const mapping = {\n  \"john.carter@demo-corp.com\": \"iamhr-john-carter\",\n  \"sarah.connor@demo-corp.com\": \"iamhr-sarah-connor\",\n  \"tchalla.udaku@demo-corp.com\": \"iamhr-tchalla-udaku\",\n  \"ellen.ripley@demo-corp.com\": \"iamhr-ellen-ripley\",\n  \"arthur.dent@demo-corp.com\": \"iamhr-arthur-dent\",\n  \"marty.mcfly@demo-corp.com\": \"iamhr-marty-mcfly\",\n  \"dana.scully@demo-corp.com\": \"iamhr-dana-scully\"\n};\nconst b=$json.body??{};\nconst email=typeof b.target_email==='string'?b.target_email:'';\nconst id=b.operation_id==null?null:String(b.operation_id);\nconst fail=(code,http_status,error)=>[{json:{valid:false,success:false,code,http_status,error}}];\nif (!Object.hasOwn(mapping,email)) return fail('TARGET_NOT_ALLOWED',400,'Select an allowed synthetic target.');\nif (id!==null&&!/^[1-9][0-9]{0,17}$/.test(id)) return fail('INVALID_REQUEST',400,'Invalid operation_id.');\nconst entries=Object.entries(mapping);\nif(entries.length!==7||new Set(entries.map(([,id])=>id)).size!==7||entries.some(([,id])=>!/^iamhr-[a-z0-9-]+$/.test(id)))\n  return fail('INVALID_SYNTHETIC_MAPPING',500,'Synthetic target configuration is invalid.');\nconst project=$env.GCP_PROJECT_ID;\nif(typeof project!=='string'||!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project))\n  return fail('INVALID_GCP_PROJECT',500,'GCP project configuration is invalid.');\nconst account_id=mapping[email];\nconst expected_email=`${account_id}@${project}.iam.gserviceaccount.com`;\nreturn [{json:{valid:true,kind:'offboard',email,operation_id:id,owner:String($execution.id),is_webhook:!!$json.webhookUrl,account_id,expected_email,gcp_project_id:project}}];"
+      }
+    },
+    {
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "f2dfce12-8e07-43e8-8cd7-c6b281cbd9f0",
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "069897bb-7dc6-42db-b451-8c2d63697b01",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Invalid Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "7bd25da9-6298-40e2-b7d5-28aa112001c4",
+      "position": [
+        780,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const preflight=$('Validate Request').first().json;\nreturn [{json:{http_status:preflight.http_status,success:false,code:preflight.code,error:preflight.error}}];"
+      }
+    },
+    {
+      "name": "Claim Operation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "1a311b6e-0e42-4cfb-8029-185df1a7fd60",
+      "position": [
+        1040,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_begin($1,$2,$3::bigint,$4) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$json.kind,$json.email,$json.operation_id,$json.owner] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Claim Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "9d573098-43e4-4b16-9bcf-e72b7d67dbbb",
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json.data}];"
+      }
+    },
+    {
+      "name": "Acquired?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "ee8dfdcc-a064-42c0-9011-2fc5cd047843",
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "699a0a3a-67b6-4d90-abb1-552cc124a3ce",
+              "leftValue": "={{ $json.accepted === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Existing Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "357920a1-1f40-412e-9767-b03c195372b0",
+      "position": [
+        260,
+        260
+      ],
+      "parameters": {
+        "jsCode": "const r=$json; return [{json:{...r,success:r.operation?.status==='succeeded'&&!r.code,error:r.code??undefined}}];"
+      }
+    },
+    {
+      "name": "Next Step 1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "3fb28774-25f8-4034-817a-44ee07af80de",
+      "position": [
+        520,
+        260
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_next($1::bigint,$2) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Dispatch 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "82cce263-08f8-4d49-9c6f-eaedf42c89d8",
+      "position": [
+        780,
+        260
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json.data}];"
+      }
+    },
+    {
+      "name": "ERP Required?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "6bd34162-10b1-485f-a905-88252d669edb",
+      "position": [
+        1040,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7c2188cb-5d6c-4094-90f4-cc676f8422c6",
+              "leftValue": "={{ !$json.done && $json.connector === \"erp\" }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "ERP Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "b9ae4eb0-dc34-4316-abf5-7913a0f7dd0e",
+      "position": [
+        1300,
+        260
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json}];"
+      }
+    },
+    {
+      "name": "ERP Inspect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "id": "5973baba-4293-42e1-b764-14b1e58b000c",
+      "position": [
+        0,
+        520
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=http://mock-erp:8000/licenses/{{ encodeURIComponent($json.target_email) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "ERP Check State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "d76eff8a-1b7c-4747-b079-760d55da7b5c",
+      "position": [
+        260,
+        520
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$('ERP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=body?.license_status==='ACTIVE'||body?.license_status==='REVOKED';\nconst desired=body?.license_status==='REVOKED';\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
+      }
+    },
+    {
+      "name": "ERP Write Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "a9f5f93e-30e8-4bc6-bdbe-0e02542d7a4b",
+      "position": [
+        520,
+        520
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0f5dbd43-9086-4595-91a2-1e6b484cc168",
+              "leftValue": "={{ $json.mutate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "ERP Authorize Write",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "e69f7d72-36f8-4095-bed0-1660b69c2f31",
+      "position": [
+        780,
+        520
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_mark_write($1::bigint,$2,$3) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner, \"erp\"] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "ERP Apply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "id": "41cfc1fe-1e05-4628-8f4e-61264e446479",
+      "position": [
+        1040,
+        520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://mock-erp:8000/licenses/{{ encodeURIComponent($('ERP Context').first().json.target_email) }}/revoke",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "name": "ERP Classify Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "bc9aa9c0-8e79-4000-bffb-a3b9c316d4ef",
+      "position": [
+        1300,
+        520
+      ],
+      "parameters": {
+        "jsCode": "const status=Number($json.statusCode??0);\nlet body=$json.body;try{if(typeof body==='string'&&body.trim())body=JSON.parse(body);}catch{body=null;}\nconst ok=status>=200&&status<300 && body?.license_status==='REVOKED';\nconst rejected=[400,401,403,404,405,422,429].includes(status);\nreturn [{json:{status:ok?'succeeded':rejected?'failed':'unknown',detail:{phase:'write',http_status:status||null,code:ok?'APPLIED':rejected?'REQUEST_REJECTED':'WRITE_OUTCOME_UNKNOWN'}}}];"
+      }
+    },
+    {
+      "name": "ERP Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "270c069d-28df-4d57-b1d3-3129003ef96e",
+      "position": [
+        0,
+        780
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_record($1::bigint,$2,$3,$4,$5::jsonb) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner, \"erp\", $json.status, JSON.stringify($json.detail)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Next Step 2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "d2a2927a-7401-4d28-b375-7388a9abee48",
+      "position": [
+        260,
+        780
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_next($1::bigint,$2) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Dispatch 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "dfd1cab7-dfe7-4c9a-bc85-75d90436ee7b",
+      "position": [
+        520,
+        780
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json.data}];"
+      }
+    },
+    {
+      "name": "GCP Required?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "ce717d46-146b-4c01-acf4-3d297ae2f741",
+      "position": [
+        780,
+        780
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "50918aa4-8eff-45f0-b193-4f8dfb163af2",
+              "leftValue": "={{ !$json.done && $json.connector === \"gcp\" }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "GCP Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "5a049cb5-de99-4c02-b65d-f9e02a5e8a24",
+      "position": [
+        1040,
+        780
+      ],
+      "parameters": {
+        "jsCode": "const preflight=$('Validate Request').first().json;\nreturn [{json:{...$json,account_id:preflight.account_id,expected_email:preflight.expected_email,gcp_project_id:preflight.gcp_project_id}}];"
+      }
+    },
+    {
+      "name": "GCP Inspect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "id": "6e568774-f0f9-49c3-8957-2e96007ea319",
+      "position": [
+        1300,
+        780
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $('GCP Context').first().json.gcp_project_id }}/serviceAccounts/{{ $json.expected_email }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "name": "IAM-HR GCP Connector"
+        }
+      }
+    },
+    {
+      "name": "GCP Check State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "56d63fa0-e4b3-4e52-8d11-a077d06d3f9d",
+      "position": [
+        0,
+        1040
+      ],
+      "parameters": {
+        "jsCode": "const ctx=$('GCP Context').first().json;\nlet body=$json.body;try{if(typeof body==='string')body=JSON.parse(body);}catch{body=null;}\nconst status=Number($json.statusCode??0);const ok=status>=200&&status<300;\nconst known=body?.email===ctx.expected_email && (body.disabled===undefined||typeof body.disabled==='boolean');\nconst desired=body?.disabled===true;\nconst uncertain=ctx.prior_status==='unknown';\nconst mutate=ok&&known&&!desired&&!uncertain;\nreturn [{json:{mutate,status:uncertain?'unknown':ok&&known&&desired?'succeeded':'failed',detail:{phase:'probe',http_status:status||null,code:ok&&known?(uncertain?'OPERATOR_REVIEW_REQUIRED':desired?'ALREADY_IN_DESIRED_STATE':'WRITE_REQUIRED'):'STATE_READ_FAILED'}}}];"
+      }
+    },
+    {
+      "name": "GCP Write Needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "id": "e4fe23a5-b0f3-427d-b664-12d76705255d",
+      "position": [
+        260,
+        1040
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8da24b35-65eb-46dd-80f4-a29978580b12",
+              "leftValue": "={{ $json.mutate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "GCP Authorize Write",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "68eaec4a-de58-4956-a6b7-2210a9cff5dc",
+      "position": [
+        520,
+        1040
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_mark_write($1::bigint,$2,$3) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner, \"gcp\"] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "GCP Apply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "id": "ccff2b12-fb84-47b2-a316-3266bd8ba55e",
+      "position": [
+        780,
+        1040
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://iam.googleapis.com/v1/projects/{{ $('GCP Context').first().json.gcp_project_id }}/serviceAccounts/{{ $('GCP Context').first().json.expected_email }}:disable",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "text",
+              "outputPropertyName": "body"
+            }
+          }
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi"
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleApi": {
+          "name": "IAM-HR GCP Connector"
+        }
+      }
+    },
+    {
+      "name": "GCP Classify Write",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "05fc4d4c-f85c-4cfc-bd68-e31ba9afa89e",
+      "position": [
+        1040,
+        1040
+      ],
+      "parameters": {
+        "jsCode": "const status=Number($json.statusCode??0);\nlet body=$json.body;try{if(typeof body==='string'&&body.trim())body=JSON.parse(body);}catch{body=null;}\nconst ok=status>=200&&status<300 && true;\nconst rejected=[400,401,403,404,405,422,429].includes(status);\nreturn [{json:{status:ok?'succeeded':rejected?'failed':'unknown',detail:{phase:'write',http_status:status||null,code:ok?'APPLIED':rejected?'REQUEST_REJECTED':'WRITE_OUTCOME_UNKNOWN'}}}];"
+      }
+    },
+    {
+      "name": "GCP Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "d87698f5-114b-4d29-b46f-f39997e9f6c2",
+      "position": [
+        1300,
+        1040
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_record($1::bigint,$2,$3,$4,$5::jsonb) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner, \"gcp\", $json.status, JSON.stringify($json.detail)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Next Step 3",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "479925e9-1f44-49bd-b061-acb29143a2c4",
+      "position": [
+        0,
+        1300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_next($1::bigint,$2) AS data;",
+        "options": {
+          "queryReplacement": "={{ [$('Claim Result').first().json.operation_id, $('Validate Request').first().json.owner] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Dispatch 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "0466f7b8-9dc5-4efd-85dd-dbbc95ae9e49",
+      "position": [
+        260,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json.data}];"
+      }
+    },
+    {
+      "name": "Completed Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "93161633-f135-4b32-b60a-5a1a9a363891",
+      "position": [
+        520,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "const o=$json.operation; if(!o)throw new Error('Operation did not finish'); return [{json:{http_status:200,success:o.status==='succeeded',status:o.status,operation:o,message:o.status==='succeeded'?'All connectors confirmed.':'Some connectors require attention.'}}];"
+      }
+    },
+    {
+      "name": "Attach Dashboard",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "id": "7496e128-3370-4969-9d72-8a289c4a3ac2",
+      "position": [
+        780,
+        1300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT $1::jsonb || jsonb_build_object('dashboard',iam_dashboard()) AS data;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "name": "Public Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "350a819c-c869-4f43-b261-fa9325d27489",
+      "position": [
+        1040,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "return [{json:$json.data}];"
+      }
+    },
+    {
+      "name": "Internal Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "b4d6cf45-0616-4d1c-b062-867f4056ba62",
+      "position": [
+        1300,
+        1300
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{http_status:500,success:false,code:'OPERATION_INTERNAL_ERROR',error:'Execution requires inspection. Do not start a new operation. The runtime lock may still be held.'}}];"
+      }
+    },
+    {
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "id": "78f1966a-4888-4ede-a0a5-cbe9bdd1a16f",
+      "position": [
+        0,
+        1560
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.http_status ?? 200 }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Claim Operation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invalid Request": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Operation": {
+      "main": [
+        [
+          {
+            "node": "Claim Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Result": {
+      "main": [
+        [
+          {
+            "node": "Acquired?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acquired?": {
+      "main": [
+        [
+          {
+            "node": "Next Step 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Existing Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Existing Result": {
+      "main": [
+        [
+          {
+            "node": "Attach Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Step 1": {
+      "main": [
+        [
+          {
+            "node": "Dispatch 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch 1": {
+      "main": [
+        [
+          {
+            "node": "ERP Required?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Required?": {
+      "main": [
+        [
+          {
+            "node": "ERP Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GCP Required?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Context": {
+      "main": [
+        [
+          {
+            "node": "ERP Inspect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Inspect": {
+      "main": [
+        [
+          {
+            "node": "ERP Check State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Check State": {
+      "main": [
+        [
+          {
+            "node": "ERP Write Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Authorize Write": {
+      "main": [
+        [
+          {
+            "node": "ERP Apply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Write Needed?": {
+      "main": [
+        [
+          {
+            "node": "ERP Authorize Write",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERP Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Apply": {
+      "main": [
+        [
+          {
+            "node": "ERP Classify Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Record": {
+      "main": [
+        [
+          {
+            "node": "Next Step 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERP Classify Write": {
+      "main": [
+        [
+          {
+            "node": "ERP Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Step 2": {
+      "main": [
+        [
+          {
+            "node": "Dispatch 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch 2": {
+      "main": [
+        [
+          {
+            "node": "GCP Required?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Required?": {
+      "main": [
+        [
+          {
+            "node": "GCP Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Completed Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Context": {
+      "main": [
+        [
+          {
+            "node": "GCP Inspect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Inspect": {
+      "main": [
+        [
+          {
+            "node": "GCP Check State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Check State": {
+      "main": [
+        [
+          {
+            "node": "GCP Write Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Authorize Write": {
+      "main": [
+        [
+          {
+            "node": "GCP Apply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Write Needed?": {
+      "main": [
+        [
+          {
+            "node": "GCP Authorize Write",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GCP Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Apply": {
+      "main": [
+        [
+          {
+            "node": "GCP Classify Write",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Record": {
+      "main": [
+        [
+          {
+            "node": "Next Step 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCP Classify Write": {
+      "main": [
+        [
+          {
+            "node": "GCP Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next Step 3": {
+      "main": [
+        [
+          {
+            "node": "Dispatch 3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dispatch 3": {
+      "main": [
+        [
+          {
+            "node": "Completed Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Public Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Internal Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completed Result": {
+      "main": [
+        [
+          {
+            "node": "Attach Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Public Result": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Internal Error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

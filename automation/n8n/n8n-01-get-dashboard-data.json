@@ -1,0 +1,85 @@
+{
+  "name": "IAM-HR - Get Dashboard Data",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "iam-hr-data",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -64,
+        176
+      ],
+      "id": "webhook-get",
+      "name": "Receive Request",
+      "webhookId": "3e3841ff-7ea3-4d41-9b7a-72d5342efc55"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT iam_dashboard() AS data;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        144,
+        176
+      ],
+      "id": "query-employees",
+      "name": "Query Employees",
+      "credentials": {
+        "postgres": {
+          "name": "IAM-HR Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.data }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        352,
+        176
+      ],
+      "id": "respond-get",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "Receive Request": {
+      "main": [
+        [
+          {
+            "node": "Query Employees",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Employees": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
