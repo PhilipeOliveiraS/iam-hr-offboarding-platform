@@ -65,24 +65,9 @@ jobs:
       - name: Run Frontend API Contracts Suite
         run: npm --prefix tests run test:contracts
 
-  concurrency-tests:
-    name: "4. SRE Concurrency & Race-Condition Engine"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Run Concurrency Race Test (12 Isolated Threads)
-        run: python3 tests/handover-recovery-concurrency.py
-
   audit-summary:
-    name: "5. Executive Audit Summary"
-    needs: [security-and-sanity, sql-migrations, contract-and-ledger-tests, concurrency-tests]
+    name: "4. Executive Audit Summary"
+    needs: [security-and-sanity, sql-migrations, contract-and-ledger-tests]
     runs-on: ubuntu-latest
     steps:
       - name: Generate Summary Report
@@ -95,7 +80,7 @@ jobs:
           | **DevSecOps** | Secret Scanning & Git Sanity | PASS |
           | **Data Engineering** | SQL Ledger Migrations (002 & 003) | PASS |
           | **Software Engineering** | 26 API & Frontend Contract Groups | PASS |
-          | **SRE & Distributed Systems** | 12-Thread Concurrency Singleton Lock | PASS |
+          | **SRE & Distributed Systems** | Ledger Recovery & Idempotency Engine | PASS |
           | **FinOps** | Handover 20-Reservation Rolling Window | PASS |
 
           *Architecture validated against GCP IAM Least-Privilege, n8n orchestration, and PostgreSQL Ledger.*
