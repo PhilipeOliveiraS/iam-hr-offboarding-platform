@@ -1,0 +1,7 @@
+# GitHub Linguist Overrides - PH3 Digital Factory
+# Oculta testes, mocks e automações da contagem de linguagens do repo
+tests/** linguist-vendored
+tests/** linguist-documentation
+tests/fixtures/*.sql linguist-vendored
+mock-erp/** linguist-vendored
+automation/** linguist-vendored
