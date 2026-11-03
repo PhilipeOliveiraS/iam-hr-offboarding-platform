@@ -49,11 +49,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: tests/package-lock.json
+
+      - name: Install Root Dependencies (TypeScript & Next.js)
+        run: npm install --no-audit
 
       - name: Install Test Dependencies
-        run: npm --prefix tests ci || npm --prefix tests install
+        run: npm --prefix tests install
 
       - name: Run Ledger Recovery Suite
         run: npm --prefix tests test
@@ -76,8 +77,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run Handover Concurrency Simulation (12 Threads)
-        run: python3 tests/handover-concurrency.py
+      - name: Run Concurrency Race Test (12 Isolated Threads)
+        run: python3 tests/handover-recovery-concurrency.py
 
   audit-summary:
     name: "5. Executive Audit Summary"
