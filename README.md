@@ -11,12 +11,12 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
 </p>
 <p align="center">
-  <a href="https://iam-hr.ph3digital.com.br" target="_blank">
+  <a href="https://iam-hr.ph3digital.com.br/iam-hr-sandbox" target="_blank">
     <img src="https://img.shields.io/badge/LIVE_DEMO-Interactive_Enterprise_Sandbox-success?style=for-the-badge&logo=google-cloud&logoColor=white" alt="Live Demo" />
   </a>
 </p>
 
-> **Live Interactive Sandbox:** [https://iam-hr.ph3digital.com.br](https://iam-hr.ph3digital.com.br)  
+> **Live Interactive Sandbox:** [https://iam-hr.ph3digital.com.br/iam-hr-sandbox](https://iam-hr.ph3digital.com.br/iam-hr-sandbox)  
 > *Zero-Trust Enterprise IAM & Identity Lifecycle Automation Platform running live on bare-metal Cortex-01 infrastructure.*
 
 ---
