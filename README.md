@@ -10,6 +10,14 @@
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License" />
 </p>
+<p align="center">
+  <a href="https://iam-hr.ph3digital.com.br" target="_blank">
+    <img src="https://img.shields.io/badge/LIVE_DEMO-Interactive_Enterprise_Sandbox-success?style=for-the-badge&logo=google-cloud&logoColor=white" alt="Live Demo" />
+  </a>
+</p>
+
+> **Live Interactive Sandbox:** [https://iam-hr.ph3digital.com.br](https://iam-hr.ph3digital.com.br)  
+> *Zero-Trust Enterprise IAM & Identity Lifecycle Automation Platform running live on bare-metal Cortex-01 infrastructure.*
 
 ---
 
@@ -24,10 +32,10 @@
 - [FinOps & Abuse Containment Framework](#-finops--abuse-containment-framework)
 - [Architecture Decision Records (ADR Suite)](#-architecture-decision-records-adr-suite)
 - [Directory Architecture](#-directory-architecture)
-- [Local Setup & Verification](#-local-setup--verification)
+- [Local Verification & Architecture Test Suite](#️-local-verification--architecture-test-suite)
 - [Deployment Runbook & Infrastructure](#-deployment-runbook--infrastructure)
 - [Professional Vision & Engineering Creed](#-professional-vision--engineering-creed)
-- [Contact & Collaboration](#-contact--collaboration)
+- [Enterprise Advisory & Commercial Inquiries](#-enterprise-advisory--commercial-inquiries)
 - [License](#-license)
 
 ---
@@ -360,54 +368,24 @@ iam-hr-offboarding-platform/
 
 ---
 
-## 💻 Local Setup & Verification
+## 🛠️ Local Verification & Architecture Test Suite
 
-### Prerequisites
-
-- Node.js `>= 20.x`
-- Python `3.11+`
-- Docker Engine & Docker Compose (optional for isolated full-stack testing)
-- PostgreSQL 16 (or `@electric-sql/pglite` for isolated in-memory testing)
-
-### Setup & Execution
+This repository provides an automated test suite demonstrating the transactional guarantees, concurrency controls, and ledger state machine using an in-memory PostgreSQL engine (PGlite) with zero external cloud dependencies:
 
 ```bash
 # Clone the repository
 git clone https://github.com/PhilipeOliveiraS/iam-hr-offboarding-platform.git
 cd iam-hr-offboarding-platform
 
-# Install root dependencies
-npm ci
+# Install test dependencies (Node 20+)
+npm install --no-audit
 
-# Launch Next.js local development server
-npm run dev
-# Dashboard accessible at http://localhost:3000
+# Execute the 26 contract groups, rate-limiting suite & PostgreSQL 16 PGlite ledger tests
+npm test
 ```
 
-### Environment Variables
+*Note: End-to-end cloud connectors and production orchestration runtimes are enterprise-managed and demonstrated live via the interactive sandbox.*
 
-Configure the following environment variables:
-
-- `N8N_GET_DATA_URL`: Webhook URL for Workflow 01 (Dashboard metrics).
-- `N8N_OFFBOARD_URL`: Webhook URL for Workflow 02 (Offboarding execution).
-- `N8N_WEBHOOK_KEY`: HMAC secret passed in the `X-N8N-Webhook-Secret` header.
-- `N8N_REPORT_URL`: Webhook URL for Workflow 04 (Cognitive handover report).
-
-### Verification
-
-```bash
-# Run isolated in-memory ledger recovery suite
-npm --prefix tests install
-npm --prefix tests test
-
-# Run API contract validation suite
-npm --prefix tests run test:contracts
-
-# Run handover rate-limiting suite
-npm --prefix tests run test:handover
-```
-
----
 
 ## 🚀 Deployment Runbook & Infrastructure
 
@@ -442,13 +420,16 @@ My professional journey is built upon **over 20 years of hands-on experience in 
 
 ---
 
-## 📞 Contact & Collaboration
+## 🏢 Enterprise Advisory & Commercial Inquiries
 
-**Philipe Oliveira**
+This platform was designed and engineered by **Philipe Oliveira da Silveira** as a reference architecture addressing the operational and regulatory risks of manual identity revocation, orphaned credentials, and concurrency failures.
 
-- 📧 **Email:** [philipeoliveira1984@gmail.com](mailto:philipeoliveira1984@gmail.com)
-- 💼 **LinkedIn:** [linkedin.com/in/philipeoliveiras](https://www.linkedin.com/in/philipeoliveiras)
-- 🐙 **GitHub:** [github.com/PhilipeOliveiraS](https://github.com/PhilipeOliveiraS)
+For enterprise deployments, custom connector development (SAP, TOTVS Protheus, Senior ERP, Microsoft Entra ID, Okta), or technical advisory on Cloud Platform, DevSecOps and Identity Governance:
+
+* **Engineering & Architecture:** Philipe Oliveira da Silveira
+* **Email:** [philipeoliveira1984@gmail.com](mailto:philipeoliveira1984@gmail.com)
+* **LinkedIn:** [linkedin.com/in/philipeoliveiras](https://www.linkedin.com/in/philipeoliveiras)
+* **GitHub:** [github.com/PhilipeOliveiraS](https://github.com/PhilipeOliveiraS)
 
 ---
 
