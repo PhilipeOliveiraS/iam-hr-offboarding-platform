@@ -85,6 +85,13 @@ Industry surveys point to the same gap: in a 2017 OneLogin survey of 500 IT deci
 
 ---
 
+### The Real-World Cost of Orphaned Credentials & Stale Access
+Recent cyber intelligence reports demonstrate that identity-based vulnerabilities—specifically involving former employees and third-party contractors—are driving catastrophic regulatory fines and operational disruption:
+
+* **Central Bank of Brazil (BACEN) Cyber Incident Surge:** According to the official [Banco Central do Brasil Cyber Incident Report](https://www1.folha.uol.com.br/folha-topicos/ciberseguranca/) analyzed by [Crypto ID](https://cryptoid.com.br/certificacao-digital/banco-central-alerta-para-falhas-na-protecao-de-chaves-digitais-e-acessos-de-terceiros-apos-99-incidentes-ciberneticos/), **99 cyber incidents** were registered through Q3 alone (a 74% increase in fraud events). The primary attack vectors identified by regulators were unrevoked digital certificates, contractor credentials retained post-engagement, and lack of machine identity governance under Resolutions CMN 5.274 and BCB 538.
+* **Coupang Data Breach Penalty (~$460M USD):** In one of the largest regulatory identity fines to date, a former developer utilized unrevoked signing keys retained post-employment to bypass normal authentication, exposing records of 37.5 million users and resulting in record administrative penalties.
+* **Banking Infrastructure Intrusions:** Incidents such as the [Banco do Nordeste (BNB) R$ 146.6M unauthorized Pix transactions](https://finsidersbrasil.com.br/pagamentos/pix/ataque-hacker-pix-bnb-perda-146-milhoes/) and the [BRB/TJBA judicial account breach](https://convergenciadigital.com.br/seguranca/hackers-invadem-sistema-do-brb-e-desviam-r-43-milhoes/) underscore the danger of active legitimate credentials being abused across interconnected APIs without real-time state synchronization.
+
 ## 📐 Enterprise Architecture Blueprint
 
 The platform combines perimeter security, bare-metal container isolation, and least-privilege cloud integration:
@@ -210,6 +217,38 @@ When a retry is submitted with the same `operation_id` (`POST /api/iam-hr/action
 Result: full recovery with **zero data duplication** and no phantom audit entries.
 
 ---
+
+### Distributed Concurrency Control & Race Condition Elimination
+In high-throughput enterprise environments, webhook retries, network hiccups, or concurrent automation workers can trigger multiple offboarding requests for the same employee within the same millisecond. 
+
+Without strict synchronization, distributed race conditions produce **"Split-Brain Offboarding"**:
+1. **Concurrent Duplicate Writes:** Multiple workers attempt to revoke GCP IAM bindings or delete ERP seats simultaneously, corrupting audit trails and triggering upstream API 409 Conflict / rate-limit failures.
+2. **Partial State Inconsistency:** Worker A revokes Google Workspace but fails on ERP; Worker B starts simultaneously and assumes the operation is complete, leaving cloud privileges silently active.
+
+```text
+[Webhook Ingress / Retry]
+│
+├── Worker Thread 1 ──► [Attempts Concurrent Revocation] ──┐
+│                                                         ▼
+└── Worker Thread 2 ──► [Attempts Concurrent Revocation] ──► [💥 RACE CONDITION: Split-Brain State]
+(Audit log corrupted, API conflicts)
+
+--- WITH IAM-HR SINGLETON TRANSACTIONAL LOCK ---
+
+[Concurrent Webhook Events]
+│
+▼
+[PostgreSQL 16 Engine]
+│
+├─► Worker 1: SELECT ... pg_try_advisory_xact_lock(employee_id) ──► 🟢 LOCK ACQUIRED (Proceeds)
+│
+└─► Worker 2: SELECT ... pg_try_advisory_xact_lock(employee_id) ──► 🔴 LOCK REJECTED (423 Locked / Idempotent No-Op)
+```
+
+IAM-HR enforces deterministic concurrency control directly at the database engine level via PostgreSQL 16 transactional routines (`002-operation-recovery.sql` and `003-handover-delivery.sql`):
+* **Database-Level Singleton Lock (`iam_runtime.execution_lock`):** Uses explicit transactional advisory locking tied to the `target_employee_id`. Concurrent threads attempting to execute the same offboarding lifecycle are immediately detected and rejected with zero duplicate API executions.
+* **Atomic State Transition Ledger:** Each connector status (`pending`, `running`, `succeeded`, `failed`) is persisted in a relational state machine. If an individual connector experiences a network timeout (e.g., ERP microservice transient failure), the lock safely releases and registers the exact failure boundary.
+* **Zero-Side-Effect Resumption (`/resume`):** When the workflow is re-triggered manually or by automated recovery, the orchestrator inspects the relational ledger and resumes **only the failed connector**, guaranteeing zero duplicate calls to already revoked services (strict idempotency).
 
 ## 🛡 DevSecOps & Enterprise Quality Gate
 
