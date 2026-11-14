@@ -47,6 +47,7 @@ export default function IamHrSandboxPage() {
   });
 
   const employees = data?.employees || [];
+  const auditLogs = data?.auditLogs || [];
   const recoveryReady = hasRecoveryContract(data);
   const readOnly = !recoveryReady || Boolean(error);
 
@@ -80,21 +81,30 @@ export default function IamHrSandboxPage() {
           </Link>
         </div>
 
-        <nav className="flex-1 space-y-1.5">
+        <nav className="flex-1 space-y-1.5" aria-label="Sandbox navigation">
           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-3">
             Platform
           </div>
 
-          <NavItem icon={Home} label="Dashboard" active />
-          <NavItem icon={Activity} label="Identity Lifecycle" />
-          <NavItem icon={Users} label="Directory" />
-          <NavItem icon={Lock} label="Access Policies" />
+          <NavItem icon={Home} label="Dashboard" href="#overview" active />
+          <NavItem
+            icon={Activity}
+            label="Identity Lifecycle"
+            href="#operations"
+          />
+          <NavItem icon={Users} label="Directory" href="#directory" />
+          <NavItem
+            icon={Lock}
+            label="Access Policies"
+            disabled
+            badge="Read-only"
+          />
 
           <div className="mt-8 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 px-3">
             Resources
           </div>
-          <NavItem icon={FileText} label="Audit Logs" />
-          <NavItem icon={Settings} label="Settings" />
+          <NavItem icon={FileText} label="Audit Logs" href="#audit-logs" />
+          <NavItem icon={Settings} label="Settings" disabled badge="Planned" />
         </nav>
 
         <div className="mt-auto pt-6 border-t border-slate-800/50">
@@ -159,7 +169,10 @@ export default function IamHrSandboxPage() {
             </p>
           )}
           {/* KPI METRICS */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div
+            id="overview"
+            className="scroll-mt-24 grid grid-cols-1 md:grid-cols-4 gap-6"
+          >
             <MetricCard
               title="Total Identities"
               value={isLoading ? "-" : totalUsers}
@@ -193,7 +206,10 @@ export default function IamHrSandboxPage() {
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             {/* LEFT: ACTION CONSOLE */}
             <div className="xl:col-span-2 space-y-6">
-              <Card className="bg-slate-900/40 border-slate-800 shadow-xl">
+              <Card
+                id="operations"
+                className="scroll-mt-24 bg-slate-900/40 border-slate-800 shadow-xl"
+              >
                 <CardHeader>
                   <CardTitle className="text-lg">Live Operations</CardTitle>
                   <CardDescription>
@@ -212,7 +228,10 @@ export default function IamHrSandboxPage() {
               </Card>
 
               {/* LIVE TABLE */}
-              <Card className="bg-slate-900/40 border-slate-800 shadow-xl overflow-hidden">
+              <Card
+                id="directory"
+                className="scroll-mt-24 bg-slate-900/40 border-slate-800 shadow-xl overflow-hidden"
+              >
                 <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">
@@ -271,6 +290,71 @@ export default function IamHrSandboxPage() {
                   </table>
                 </div>
               </Card>
+
+              {/* PUBLIC AUDIT TRAIL */}
+              <Card
+                id="audit-logs"
+                className="scroll-mt-24 bg-slate-900/40 border-slate-800 shadow-xl overflow-hidden"
+              >
+                <CardHeader className="border-b border-slate-800/50 bg-slate-900/20">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base">
+                      Public Audit Trail
+                    </CardTitle>
+                    <span className="text-xs text-slate-500 font-mono">
+                      SOURCE: AUDIT_LOG_PUBLIC (READ-ONLY)
+                    </span>
+                  </div>
+                </CardHeader>
+                <div className="p-0 overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="text-xs text-slate-500 uppercase bg-slate-950/50 font-medium">
+                      <tr>
+                        <th className="px-6 py-3">Event</th>
+                        <th className="px-6 py-3">Target Identity</th>
+                        <th className="px-6 py-3">Action</th>
+                        <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3 text-right">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {auditLogs.length === 0 && !isLoading ? (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="text-center py-8 text-slate-500"
+                          >
+                            No public audit events recorded yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        auditLogs.map((entry) => (
+                          <tr
+                            key={`${entry.id}-${entry.action}`}
+                            className="hover:bg-slate-800/30 transition-colors"
+                          >
+                            <td className="px-6 py-3 font-mono text-xs text-slate-500">
+                              #{entry.id}
+                            </td>
+                            <td className="px-6 py-3 text-slate-200 font-mono text-xs">
+                              {entry.target_email}
+                            </td>
+                            <td className="px-6 py-3 text-slate-300">
+                              {entry.action}
+                            </td>
+                            <td className="px-6 py-3">
+                              <AuditStatusBadge status={entry.status} />
+                            </td>
+                            <td className="px-6 py-3 text-right text-slate-500 font-mono text-xs">
+                              {formatAuditTimestamp(entry.created_at)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </div>
 
             {/* RIGHT: INFO / HELP */}
@@ -290,7 +374,7 @@ export default function IamHrSandboxPage() {
                     <div className="flex justify-between">
                       <span>Identity Provider:</span>{" "}
                       <span className="text-slate-200">
-                        GCP IAM (demo service account)
+                        GCP IAM (7 synthetic service accounts)
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -319,19 +403,68 @@ export default function IamHrSandboxPage() {
 function NavItem({
   icon: Icon,
   label,
+  href,
   active,
+  disabled,
+  badge,
 }: {
   icon: LucideIcon;
   label: string;
+  href?: string;
   active?: boolean;
+  disabled?: boolean;
+  badge?: string;
 }) {
+  if (disabled || !href) {
+    return (
+      <div
+        aria-disabled="true"
+        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-slate-600 cursor-not-allowed opacity-70 select-none"
+      >
+        <span className="flex items-center gap-3">
+          <Icon className="h-4 w-4" />
+          <span className="text-sm font-medium">{label}</span>
+        </span>
+        {badge && (
+          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-slate-800 bg-slate-950/60 text-slate-500">
+            {badge}
+          </span>
+        )}
+      </div>
+    );
+  }
   return (
-    <div
-      className={`flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-all ${active ? "bg-blue-600/10 text-blue-500" : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"}`}
+    <a
+      href={href}
+      className={`flex items-center gap-3 px-3 py-2 rounded-md transition-all ${active ? "bg-blue-600/10 text-blue-500" : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"}`}
     >
       <Icon className="h-4 w-4" />
       <span className="text-sm font-medium">{label}</span>
-    </div>
+    </a>
+  );
+}
+
+function formatAuditTimestamp(raw: string): string {
+  if (!raw) return "Current cycle";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+}
+
+function AuditStatusBadge({ status }: { status: string }) {
+  const normalized = status.toLowerCase();
+  const style =
+    normalized === "success" || normalized === "approved"
+      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+      : normalized === "partial success" || normalized === "needs review"
+        ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+        : "text-slate-300 bg-slate-500/10 border-slate-500/20";
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${style}`}
+    >
+      {status}
+    </span>
   );
 }
 

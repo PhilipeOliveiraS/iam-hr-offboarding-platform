@@ -223,6 +223,9 @@ CREATE OR REPLACE FUNCTION iam_dashboard() RETURNS jsonb LANGUAGE sql STABLE AS 
  'metrics',(SELECT jsonb_build_object('avg_processing_ms',round(avg(processing_ms) FILTER(WHERE status='succeeded')),
  'successful_count',count(*) FILTER(WHERE status='succeeded'),'partial_count',count(*) FILTER(WHERE status='partial'),
  'unknown_count',count(*) FILTER(WHERE status='unknown'),'window_hours',24)
- FROM iam_operations WHERE kind='offboard' AND finished_at>=now()-interval '24 hours')) FROM iam_runtime r WHERE singleton;
+ FROM iam_operations WHERE kind='offboard' AND finished_at>=now()-interval '24 hours'),
+ 'audit_logs',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id::text,'target_email',a.target_email,
+ 'action',a.action,'status',a.status,'created_at',a.created_at) ORDER BY a.created_at DESC, a.id DESC)
+ FROM (SELECT id,target_email,action,status,created_at FROM audit_log_public ORDER BY created_at DESC, id DESC LIMIT 10) a),'[]'::jsonb)) FROM iam_runtime r WHERE singleton;
 $$;
 COMMIT;

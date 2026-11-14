@@ -29,6 +29,14 @@ export interface Employee {
   Operation: Operation | null;
 }
 
+export interface AuditLogEntry {
+  id: string;
+  target_email: string;
+  action: string;
+  status: string;
+  created_at: string;
+}
+
 export interface Dashboard {
   employees: Employee[];
   cycle?: string;
@@ -41,6 +49,7 @@ export interface Dashboard {
     unknown_count: number;
     window_hours: number;
   };
+  auditLogs?: AuditLogEntry[];
 }
 
 export class ApiContractError extends Error {
@@ -132,6 +141,52 @@ export function hasRecoveryContract(dashboard: Dashboard | undefined): boolean {
   );
 }
 
+function normalizeAuditLogs(
+  rawAudit: unknown,
+  employees: Employee[],
+): AuditLogEntry[] {
+  if (rawAudit === undefined) {
+    return employees
+      .filter((employee): employee is Employee & { Operation: Operation } =>
+        Boolean(employee.Operation),
+      )
+      .map((employee) => ({
+        id: `op-${employee.Operation.id}`,
+        target_email: employee.Email,
+        action: "Offboarding Executed",
+        status:
+          employee.Operation.status === "succeeded"
+            ? "Success"
+            : employee.Operation.status === "unknown"
+              ? "Needs Review"
+              : employee.Operation.status === "partial"
+                ? "Partial Success"
+                : employee.Operation.status,
+        created_at: "",
+      }));
+  }
+  requireContract(Array.isArray(rawAudit));
+  return rawAudit.slice(0, 20).map((item) => {
+    requireContract(isRecord(item));
+    const rawId = item.id;
+    requireContract(
+      (typeof rawId === "string" && rawId.trim().length > 0) || isCount(rawId),
+    );
+    const targetEmail = textField(item, ["target_email", "targetEmail"]).toLowerCase();
+    const action = textField(item, ["action"]);
+    const status = textField(item, ["status"]);
+    const createdAt = textField(item, ["created_at", "createdAt"], "");
+    requireContract(targetEmail.length > 0 && action.length > 0 && status.length > 0);
+    return {
+      id: String(rawId),
+      target_email: targetEmail,
+      action,
+      status,
+      created_at: createdAt,
+    };
+  });
+}
+
 export function normalizeDashboard(raw: unknown): Dashboard {
   const body = isRecord(raw) ? raw : {};
   requireContract(body.success !== false && !body.error);
@@ -208,6 +263,10 @@ export function normalizeDashboard(raw: unknown): Dashboard {
     new Set(employees.map((employee) => employee.Email)).size ===
       employees.length,
   );
+  const auditLogs = normalizeAuditLogs(
+    field(body, ["auditLogs", "audit_logs", "audit_log_public"]),
+    employees,
+  );
   return recovery
     ? {
         employees,
@@ -215,8 +274,9 @@ export function normalizeDashboard(raw: unknown): Dashboard {
         busy: body.busy as boolean,
         maintenance: body.maintenance as boolean,
         metrics: body.metrics as Dashboard["metrics"],
+        auditLogs,
       }
-    : { employees };
+    : { employees, auditLogs };
 }
 
 export function normalizeOffboarding(

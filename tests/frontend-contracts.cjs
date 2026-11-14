@@ -609,6 +609,62 @@ const email = "john.carter@demo-corp.com";
         assert(successHtml.includes("GCP IAM (synthetic employee identity)"));
       },
     );
+    await check(
+      "audit_logs from audit_log_public are sanitized read-only through route GET without leaking requester or detail",
+      async () => {
+        assert(Array.isArray(completeDashboard.audit_logs));
+        assert(completeDashboard.audit_logs.length >= 1);
+        const rawWithPrivateFields = structuredClone(completeDashboard);
+        rawWithPrivateFields.audit_logs = rawWithPrivateFields.audit_logs.map(
+          (entry) => ({
+            ...entry,
+            requester: "private-requester@example.com",
+            detail: { secret: "internal-execution-metadata" },
+          }),
+        );
+        respond(rawWithPrivateFields);
+        const response = await route.GET();
+        assert.equal(response.status, 200);
+        const body = await response.json();
+        assert(Array.isArray(body.auditLogs) && body.auditLogs.length >= 1);
+        const serialized = JSON.stringify(body.auditLogs);
+        assert(!serialized.includes("private-requester@example.com"));
+        assert(!serialized.includes("internal-execution-metadata"));
+        assert.deepEqual(
+          Object.keys(body.auditLogs[0]).sort(),
+          ["action", "created_at", "id", "status", "target_email"],
+        );
+        const withoutAudit = structuredClone(partialReply.dashboard);
+        delete withoutAudit.audit_logs;
+        const fallback = library.normalizeDashboard(withoutAudit);
+        assert(Array.isArray(fallback.auditLogs));
+        assert.equal(fallback.auditLogs[0].target_email, email);
+        assert.equal(fallback.auditLogs[0].status, "Partial Success");
+      },
+    );
+    await check(
+      "SCRUM-14 UI sanitization removes dead links, legacy branding, and exposes 7 synthetic service accounts + audit feed",
+      () => {
+        const sandboxSource = fs.readFileSync(
+          repo + "/app/iam-hr-sandbox/page.tsx",
+          "utf8",
+        );
+        assert(sandboxSource.includes("GCP IAM (7 synthetic service accounts)"));
+        assert(!sandboxSource.includes("GCP IAM (demo service account)"));
+        assert(!sandboxSource.includes("14 contas"));
+        for (const anchor of ["#overview", "#operations", "#directory", "#audit-logs"]) {
+          assert(sandboxSource.includes(anchor), `Missing anchor ${anchor}`);
+        }
+        assert(sandboxSource.includes("AUDIT_LOG_PUBLIC"));
+        assert(sandboxSource.includes('aria-disabled="true"'));
+
+        const landingSource = fs.readFileSync(repo + "/app/page.tsx", "utf8");
+        assert(!landingSource.includes('href="#"'));
+        assert(!landingSource.includes("PH3 Digital Factory"));
+        assert(!landingSource.includes("Showroom"));
+        assert(landingSource.includes("onCheckedChange={setIsTechnicalView}"));
+      },
+    );
     console.log(
       `PASS: ${checks} local frontend/API contract groups; fetch fully mocked, PostgreSQL in memory.`,
     );
